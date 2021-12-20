@@ -16,6 +16,8 @@ uint8_t can_buffer_last = 0;
 uint8_t slcan_mode = SLCAN_MODE_CLOSED;
 char msgbuf[128];
 uint8_t flags;
+uint32_t rcount = 0;
+uint8_t overflow = 0;
 
 #define WITHOUT_INTERRUPTION(CODE) {uint8_t sreg = SREG; noInterrupts(); {CODE} SREG = sreg;}
 
@@ -27,19 +29,16 @@ uint8_t flags;
  */
 void ISR_SETUP(void) {
     // set pins as input
-    uint8_t sreg = SREG; 
-    noInterrupts();
+    PCIFR = 0x0F; 
     pinMode(CAN0_INT, INPUT);
     pinMode(CAN1_INT, INPUT);
     pinMode(CAN2_INT, INPUT);
     *digitalPinToPCICR(CAN0_INT) |= (1 << digitalPinToPCICRbit(CAN0_INT));
     *digitalPinToPCICR(CAN1_INT) |= (1 << digitalPinToPCICRbit(CAN1_INT));
     *digitalPinToPCICR(CAN2_INT) |= (1 << digitalPinToPCICRbit(CAN2_INT));
-    *digitalPinToPCMSK(CAN0_INT) = _BV(digitalPinToPCMSKbit(CAN0_INT));
-    *digitalPinToPCMSK(CAN1_INT) = _BV(digitalPinToPCMSKbit(CAN1_INT));
-    *digitalPinToPCMSK(CAN2_INT) = _BV(digitalPinToPCMSKbit(CAN2_INT));
-    SREG = sreg;
-    
+    *digitalPinToPCMSK(CAN0_INT) = 0xFF; //_BV(digitalPinToPCMSKbit(CAN0_INT));
+    *digitalPinToPCMSK(CAN1_INT) = 0x00; //_BV(digitalPinToPCMSKbit(CAN1_INT));
+    *digitalPinToPCMSK(CAN2_INT) = 0x00; //_BV(digitalPinToPCMSKbit(CAN2_INT));
     sprintf(msgbuf, "ISR Set to %02X %02X %02X %02X %02X", PCICR, PCMSK0, PCMSK1, PCMSK2, PCMSK3);
     Serial.println(msgbuf);
 }
@@ -55,8 +54,9 @@ uint8_t can_data_transmit_full(void) {
     return 0;
 }
 
-void can_data_put(uint8_t bus, uint32_t id, uint8_t ext, uint8_t rtr, uint8_t len, uint8_t *buf) {
+inline void can_data_put(uint8_t bus, uint32_t id, uint8_t ext, uint8_t rtr, uint8_t len, uint8_t *buf) {
     if (can_data_full()) {
+	overflow = 1;
         return;
     }
     
@@ -73,7 +73,7 @@ void can_data_put(uint8_t bus, uint32_t id, uint8_t ext, uint8_t rtr, uint8_t le
     memcpy(can_buffer[can_buffer_last].data, buf, len);
 }
 
-uint8_t can_data_pull(can_data *msg) {
+inline uint8_t can_data_pull(can_data *msg) {
     if (can_buffer_first == can_buffer_last) return 0; // nothing available
 
     msg->bus = can_buffer[can_buffer_first].bus;
@@ -95,10 +95,13 @@ uint8_t can_data_pull(can_data *msg) {
 inline void can_data_reset(void) {
     can_buffer_first = 0;
     can_buffer_last = 0;
+    
+    CAN0.resetInt();
+    CAN1.resetInt();
+    CAN2.resetInt();
 }
 
-ISR (PCINT0_vect) {
-    // we only use one interrupt so no checking needed
+inline void can0_isr(void) {
     uint32_t id = 0;
     uint8_t ext = 0;
     uint8_t len = 0;
@@ -107,13 +110,17 @@ ISR (PCINT0_vect) {
     uint8_t resp = CAN0.readMsgBuf(&id, &ext, &len, buf);
     
     if (CAN_OK == resp) {
-        //Serial.println("0");
         can_data_put(CAN_HSCAN, id & 0x1FFFFFFF, (id & 0x80000000) >> 24, (id & 0x40000000) >> 24, len, buf);
+	rcount++;
     }
 }
 
-ISR (PCINT2_vect) {
+ISR (PCINT0_vect) {
     // we only use one interrupt so no checking needed
+    can0_isr();
+}
+
+inline void can1_isr(void) {
     uint32_t id = 0;
     uint8_t ext = 0;
     uint8_t len = 0;
@@ -122,24 +129,33 @@ ISR (PCINT2_vect) {
     uint8_t resp = CAN1.readMsgBuf(&id, &ext, &len, buf);
     
     if (CAN_OK == resp) {
-        //Serial.println("1");
         can_data_put(CAN_MSCAN, id & 0x1FFFFFFF, (id & 0x80000000) >> 24, (id & 0x40000000) >> 24, len, buf);
+	rcount++;
+    }
+}
+
+ISR (PCINT2_vect) {
+    // we only use one interrupt so no checking needed
+    can1_isr();
+}
+
+inline void can2_isr(void) {
+    uint32_t id = 0;
+    uint8_t ext = 0;
+    uint8_t len = 0;
+    uint8_t buf[8];
+   
+    uint8_t resp = CAN2.readMsgBuf(&id, &ext, &len, buf);
+
+    if (CAN_OK == resp) {
+	can_data_put(CAN_ICAN, id & 0x1FFFFFFF, (id & 0x80000000) >> 24, (id & 0x40000000) >> 24, len, buf);
+	rcount++;
     }
 }
 
 ISR (PCINT3_vect) {
     // we only use one interrupt so no checking needed
-    uint32_t id = 0;
-    uint8_t ext = 0;
-    uint8_t len = 0;
-    uint8_t buf[8];
-    
-    uint8_t resp = CAN2.readMsgBuf(&id, &ext, &len, buf);
-    
-    if (CAN_OK == resp) {
-        //Serial.println("2");
-        can_data_put(CAN_ICAN, id & 0x1FFFFFFF, (id & 0x80000000) >> 24, (id & 0x40000000) >> 24, len, buf);
-    }
+    can2_isr();
 }
 
 
@@ -507,6 +523,13 @@ void setup() {
     can_buffer_first = can_buffer_last = 0; // reset
     
     Serial.begin(1000000);
+
+    ISR_SETUP();
+    // clear all interrupts;
+    //
+    pinMode(CAN0_CS, OUTPUT);
+    pinMode(CAN1_CS, OUTPUT);
+    pinMode(CAN2_CS, OUTPUT);
     
     if(CAN0.begin(MCP_STDEXT, CAN_500KBPS, MCP_8MHZ | MCP_CLKOUT_ENABLE) == CAN_OK) {
         Serial.print("CAN0: Init OK!\r\n");
@@ -524,13 +547,17 @@ void setup() {
     
     if(CAN2.begin(MCP_STDEXT, CAN_500KBPS, MCP_8MHZ) == CAN_OK){
         Serial.print("CAN2: Init OK!\r\n");
-        CAN1.setMode(MCP_NORMAL);
+        CAN2.setMode(MCP_NORMAL);
     } else {
         Serial.print("CAN2: Init Fail!!!\r\n");
     }
 
-    
-    //ISR_SETUP();
+    // clear buffers
+    // clear int
+    CAN0.resetInt();
+    CAN1.resetInt();
+    CAN2.resetInt();
+
 }
 
 can_data msg;
@@ -546,13 +573,16 @@ inline void cv_hex(uint8_t data, uint8_t *target) {
     target[1] = d2 > 9 ? 'A' + d2 - 10 : '0' + d2;
 }
 
+uint16_t speed = 0;
+uint16_t rpm = 0;
+
 void loop() {
     /*
      * Read uart, do things, cleanup interrupt buffer, loop.
      */
-    //int i;
+    int i;
 
-    /*if (can_data_available()) {
+    if (can_data_available()) {
 #ifdef DEBUG
         sprintf(msgbuf, "Buffer is %d", can_buffer_last - can_buffer_first);
         Serial.println(msgbuf);
@@ -594,28 +624,63 @@ void loop() {
             
             Serial.write(sendbuffer, sendbuffer_length);
             Serial.flush();
+	    sendbuffer_length = 0;
         }
     }
     
     slcan();
-    */
-    counter++;
-    if (counter > 10000) {
+ 
+    /*counter++;
+    if (counter > 20000) {
         counter = 0;
-        uint8_t x0 = CAN0.checkReceive();
-        uint8_t x1 = CAN1.checkReceive();
-        uint8_t x2 = CAN2.checkReceive();
-        uint8_t e0 = CAN0.getError();
-        uint8_t e1 = CAN1.getError();
-        uint8_t e2 = CAN2.getError();
-        uint8_t r0 = CAN0.errorCountRX();
-        uint8_t r1 = CAN1.errorCountRX();
-        uint8_t r2 = CAN2.errorCountRX();
-        sprintf(msgbuf, "E: %02X %02X %02X | %02X %02X %02X | %d %d %d", e0, e1, e2, r0, r1, r2, x0, x1, x2);
+	uint8_t x0 = 0, x1 = 0, x2 = 0, e0 = 0, e1 = 0, e2 = 0, r0 = 0, r1 = 0, r2 = 0;
+        x0 = CAN0.checkReceive();
+        x1 = CAN1.checkReceive();
+        x2 = CAN2.checkReceive();
+        e0 = CAN0.getError();
+        e1 = CAN1.getError();
+        e2 = CAN2.getError();
+        r0 = CAN0.errorCountRX();
+        r1 = CAN1.errorCountRX();
+        r2 = CAN2.errorCountRX();
+	uint8_t V1 = digitalRead(CAN0_INT);
+	uint8_t V2 = digitalRead(CAN1_INT);
+	uint8_t V3 = digitalRead(CAN2_INT);
+        sprintf(msgbuf, "E: %02X %02X %02X | %02X %02X %02X | %d %d %d | %d %d %d | %d %02X %lu ", e0, e1, e2, r0, r1, r2, x0, x1, x2, V1, V2, V3, overflow, can_buffer_first <= can_buffer_last ? can_buffer_last - can_buffer_first : CAN_BUFFER_SIZE - (can_buffer_first - can_buffer_last) , rcount);
         Serial.println(msgbuf);
+    }*/
+
+    counter++;
+    if (counter > 2500) {
+	rpm += 100;
+	speed += 250;
+	uint8_t dd[8] = { (uint8_t) (((rpm * 4) & 0xFF00) >> 8), (uint8_t) ((rpm*4) & 0x00FF), 0x00, 0x00, (uint8_t) ((speed & 0xFF00) >> 8), (uint8_t) (speed & 0x00FF), 0x00, 0x00};
+	uint8_t dd2[8] = { 0x70, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+	CAN0.sendMsgBuf(0x201, 8, dd);
+	CAN0.sendMsgBuf(0x420, 8, dd2);
+
+	if (rpm > 2000) rpm = 0;
+	if (speed > 20000) speed = 0;
+	counter = 0;
     }
-    
-    
+
+   // due to how the PCINT ISRs work we might miss the initial int
+   // and need to fix this.
+   if (digitalRead(CAN0_INT) == 0) {
+	// call ISR anyway
+	//
+	can0_isr();
+   }
+   if (digitalRead(CAN1_INT) == 0) {
+	// call ISR anyway
+	//
+	can1_isr();
+   }
+   if (digitalRead(CAN2_INT) == 0) {
+	// call ISR anyway
+	//
+	can2_isr();
+   }
     
 }
 

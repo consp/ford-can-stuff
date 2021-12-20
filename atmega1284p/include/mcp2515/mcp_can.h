@@ -40,8 +40,7 @@ class MCP_CAN
     INT8U   m_nfilhit;                                                  // The number of the filter that matched the message
     INT8U   MCPCS;                                                      // Chip Select pin number
     INT8U   mcpMode;                                                    // Mode to return to after configurations are performed.
-    
-
+   
 /*********************************************************************************************************
  *  mcp2515 driver function 
  *********************************************************************************************************/
@@ -72,6 +71,7 @@ class MCP_CAN
     INT8U mcp2515_readStatus(void);                                     // Read MCP2515 Status
     INT8U mcp2515_setCANCTRL_Mode(const INT8U newmode);                 // Set mode
     INT8U mcp2515_requestNewMode(const INT8U newmode);                  // Set mode
+    INT8U mcp2515_requestClkOut(const INT8U newmode); 			// Set new clkmode
     INT8U mcp2515_configRate(const INT8U canSpeed,                      // Set baudrate
 
                              const INT8U canClock);
@@ -118,6 +118,7 @@ public:
     INT8U sendMsgBuf(INT32U id, INT8U len, INT8U *buf);                 // Send message to transmit buffer
     INT8U readMsgBuf(INT32U *id, INT8U *ext, INT8U *len, INT8U *buf);   // Read message from receive buffer
     INT8U readMsgBuf(INT32U *id, INT8U *len, INT8U *buf);               // Read message from receive buffer
+    void resetInt();
     INT8U checkReceive(void);                                           // Check for received data
     INT8U checkError(void);                                             // Check for errors
     INT8U getError(void);                                               // Check for errors

@@ -9,6 +9,6 @@
 #define CAN1_INT 16
 #define CAN2_INT 15
 
-#define CAN_BUFFER_SIZE 16
+#define CAN_BUFFER_SIZE 128
 
 #endif // __SETTINGS_H__

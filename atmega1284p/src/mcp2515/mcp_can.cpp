@@ -227,6 +227,28 @@ INT8U MCP_CAN::mcp2515_requestNewMode(const INT8U newmode)
 	}
 }
 
+
+INT8U MCP_CAN::mcp2515_requestClkOut(const INT8U newmode)
+{
+	byte startTime = millis();
+
+	// Spam new mode request and wait for the operation  to complete
+	while(1)
+	{
+		// Request new mode
+		// This is inside the loop as sometimes requesting the new mode once doesn't work (usually when attempting to sleep)
+		mcp2515_modifyRegister(MCP_CANCTRL, MODE_CLKMASK, newmode); 
+
+		byte statReg = mcp2515_readRegister(MCP_CANCTRL);
+		if((statReg & (MODE_CLKMASK)) == newmode) // We're now in the new mode
+			return MCP2515_OK;
+		else if((byte)(millis() - startTime) > 200) // Wait no more than 200ms for the operation to complete
+		{
+			return MCP2515_FAIL;
+		}
+	}
+}
+
 /*********************************************************************************************************
 ** Function name:           mcp2515_configRate
 ** Descriptions:            Set baudrate
@@ -587,7 +609,7 @@ INT8U MCP_CAN::mcp2515_init(const INT8U canIDMode, const INT8U canSpeed, const I
         mcp2515_initCANBuffers();
 
                                                                         /* interrupt mode               */
-        mcp2515_setRegister(MCP_CANINTE, MCP_RX0IF | MCP_RX1IF | MCP_ERRIF);
+        mcp2515_setRegister(MCP_CANINTE, MCP_RX0IF | MCP_RX1IF);
 
         //Sets BF pins as GPO
         mcp2515_setRegister(MCP_BFPCTRL, MCP_BxBFS_MASK | MCP_BxBFE_MASK);
@@ -645,6 +667,14 @@ INT8U MCP_CAN::mcp2515_init(const INT8U canIDMode, const INT8U canSpeed, const I
 #endif           
           return res;
         }
+
+
+	if (canClock & MCP_CLKOUT_ENABLE) {
+		byte rv = mcp2515_requestClkOut(CLKOUT_ENABLE | CLKOUT_PS1);
+		if (rv) {
+			res = rv;
+		}
+	}
 
     }
     return res;
@@ -1186,6 +1216,13 @@ INT8U MCP_CAN::readMsg()
         res = CAN_NOMSG;
     
     return res;
+}
+
+void MCP_CAN::resetInt()
+{
+    mcp2515_read_canMsg(MCP_RXBUF_0);
+    mcp2515_read_canMsg(MCP_RXBUF_1);
+    mcp2515_modifyRegister(MCP_CANINTF, MCP_RX0IF | MCP_RX1IF | MCP_ERRIF, 0);
 }
 
 /*********************************************************************************************************

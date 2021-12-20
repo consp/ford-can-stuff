@@ -26,7 +26,7 @@ add_definitions ("-funsigned-char")
 add_definitions ("-funsigned-bitfields")
 add_definitions ("-ffunction-sections")
 add_definitions ("-c")
-add_definitions ("-Os")
+add_definitions ("-O3")
 add_definitions ("-ffunction-sections -fdata-sections -MMD")
 add_definitions ("-DUSB_VID=null -DUSB_PID=null -DARDUINO=106")
 
@@ -65,6 +65,7 @@ set (ARDUINO_CORE_SOURCE
 		HardwareSerial.cpp
 		HardwareSerial0.cpp
 		HardwareSerial1.cpp
+		Stream.cpp
 		hooks.c
 		new.cpp
 		Print.cpp
@@ -89,6 +90,7 @@ set_target_properties (arduino PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FL
 set_target_properties (mightycore PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
 set_target_properties (mcp2515can PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
 set_target_properties (fiesta_can.elf PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
+target_link_libraries (mcp2515can arduino mightycore)
 target_link_libraries (fiesta_can.elf mcp2515can arduino mightycore)
 
 add_custom_command (

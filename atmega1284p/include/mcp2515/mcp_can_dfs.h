@@ -201,6 +201,7 @@
 #define MODE_CONFIG     0x80
 #define MODE_POWERUP    0xE0
 #define MODE_MASK       0xE0
+#define MODE_CLKMASK 	0x07
 #define ABORT_TX        0x10
 #define MODE_ONESHOT    0x08
 #define CLKOUT_ENABLE   0x04
