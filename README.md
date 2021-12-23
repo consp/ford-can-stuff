@@ -13,6 +13,8 @@ Planned features:
 # Acknowledgements
 - [MightyCore](https://github.com/MCUdude/MightyCore) for the arduino compatable stuff (which makes my life easier even if I do not use arduino tools)
 - The [MCP_CAN_lib](https://github.com/coryjfowler/MCP_CAN_lib) fork for the mcp lib. This part is under GPLv3.
+- SLCAN driver as in the upstream kernel.
+- can-utils
 
 ## Who this is for
 This repository is the extension of my own project to get the front distance sensors working on my car. It collided with the idea of creating a translation module for Sync 4 to be fitted into Sync 3 capable vehicles. This repository is solely meant for development and debugging and not meant as a ready made tool to install and get going.

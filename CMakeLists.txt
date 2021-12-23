@@ -4,3 +4,4 @@ project(Fiesta-tools VERSION 0.1)
 
 add_subdirectory(atmega1284p)
 add_subdirectory(kernel)
+add_subdirectory(userspace)

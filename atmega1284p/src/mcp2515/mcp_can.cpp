@@ -28,6 +28,9 @@
 #define spi_readwrite SPI.transfer
 #define spi_read() spi_readwrite(0x00)
 
+#define BUFFER_SIZE 16
+
+
 /*********************************************************************************************************
 ** Function name:           mcp2515_reset
 ** Descriptions:            Performs a software reset

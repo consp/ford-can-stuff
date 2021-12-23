@@ -6,7 +6,7 @@ set (MCU atmega1284p)
 set (E_FUSE 0xFD)
 set (H_FUSE 0xD7)
 set (L_FUSE 0xF7)
-set (MCU_SPEED 16000000)
+set (MCU_SPEED 20000000)
 
 
 if (MCU MATCHES atmega1284p)
