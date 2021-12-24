@@ -23,7 +23,7 @@
 */
 #include "mcp2515/mcp_can.h"
 
-#define DEBUG_MODE 1
+//#define DEBUG_MODE 1
 
 #define spi_readwrite SPI.transfer
 #define spi_read() spi_readwrite(0x00)

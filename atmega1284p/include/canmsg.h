@@ -1,25 +1,44 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-typedef enum {
+using namespace std;
 
-	HSCAN = 1,
-	MSCAN = 2,
-	ICAN = 3,
+typedef enum {
+	HSCAN = 0,
+	MSCAN = 1,
+	ICAN = 2,
 } CAN_BUS;
 
 class canmsg {
-	private:
-		static const uint32_t identifier = 0; // should be set by children.
-		static const CAN_BUS canbus = HSCAN;
 	public:
-		canmsg(uint32_t id, uint8_t data[8], uint32_t length);
-
 		uint32_t id;
 		uint8_t data[8];
+        uint8_t bus;
+        uint8_t len;
+};
 
-		CAN_BUS bus();
+class apim_1 : public canmsg {
+    public:
+        uint32_t id = 0x048;
+        uint8_t data[8] = {0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0xE0, 0x00};
+        uint8_t len = 8;
+        uint8_t bus = 2;
+};
 
+class apim_2 : public canmsg {
+    public:
+        uint32_t id = 0x3B3;
+        uint8_t data[8] = {0x41, 0x00, 0x00, 0x00, 0x4c, 0x00, 0xE0, 0x00};
+        uint8_t len = 8;
+        uint8_t bus = 2;
+};
+
+class apim_3 : public canmsg {
+    public:
+        uint32_t id = 0x109;
+        uint8_t data[8] = {0x00, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x28};
+        uint8_t len = 8;
+        uint8_t bus = 2;
 };
 
 // bit positions of bco files:
@@ -33,11 +52,9 @@ class canmsg {
 // 63 62 61 60 59 58 57 56
 
 class CAN_SteeringWheelData_2 : canmsg {
-	private:
-		static const uint32_t identifier = 0x081; // 129
-		static const CAN_BUS canbus = ICAN;
 	public:
-		explicit CAN_SteeringWheelData_2(uint8_t d[8]);
+		uint32_t id = 0x081; // 129
+		CAN_BUS bus = ICAN;
 		union {
 			uint8_t raw[8];
 			struct {

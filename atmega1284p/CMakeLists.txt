@@ -3,10 +3,10 @@ set (UPLOAD avrdude)
 set (PROGRAMMER usbasp)
 
 set (MCU atmega1284p)
-set (E_FUSE 0xFD)
-set (H_FUSE 0xD7)
+set (E_FUSE 0xF8)
+set (H_FUSE 0x17)
 set (L_FUSE 0xF7)
-set (MCU_SPEED 20000000)
+set (MCU_SPEED 16000000)
 
 
 if (MCU MATCHES atmega1284p)
@@ -29,6 +29,7 @@ add_definitions ("-c")
 add_definitions ("-O3")
 add_definitions ("-ffunction-sections -fdata-sections -MMD")
 add_definitions ("-DUSB_VID=null -DUSB_PID=null -DARDUINO=106")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 include_directories (include/ cores/ libraries/SPI/src/ libraries/Wire/src/ libraries/EEPROM/src/ board/)
 
@@ -111,7 +112,15 @@ add_custom_command (OUTPUT rom.hex
 add_custom_target(
 	upload
 		COMMAND
-		${AVRDUDE} -C ${AVRDUDE_CONFIG} -c usbasp -p ${MCU} -U flash:w:rom.hex
+		${AVRDUDE} -c usbasp -p ${MCU} -B 5 -U flash:w:rom.hex
+	    DEPENDS rom.hex
+		COMMENT "Uploading rom to ${MCU}"
+   )
+
+add_custom_target(
+	fuses
+		COMMAND
+        ${AVRDUDE} -c usbasp -p ${MCU} -B 5 -U lfuse:w:${L_FUSE}:m =U hfuse:w:${H_FUSE}:m -U efuse:w:${E_FUSE}:m
 	    DEPENDS rom.hex
 		COMMENT "Uploading rom to ${MCU}"
    )

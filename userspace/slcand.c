@@ -41,6 +41,7 @@
 #include <syslog.h>
 #include <termios.h>
 #include <unistd.h>
+#include "slcand_baudset.h"
 
 /* Change this to whatever your daemon is called */
 #define DAEMON_NAME "slcand"
@@ -240,7 +241,7 @@ int main(int argc, char *argv[])
 			if (look_up_uart_speed(uart_speed) == -1) {
 				fprintf(stderr, "Unsupported UART speed (%lu)\n", uart_speed);
 				exit(EXIT_FAILURE);
-			}
+            }	
 			break;
 		case 't':
 			if (!strcmp(optarg, "hw")) {
@@ -338,6 +339,7 @@ int main(int argc, char *argv[])
 	/* apply changes */
 	if (tcsetattr(fd, TCSADRAIN, &tios) < 0)
 		syslogger(LOG_NOTICE, "Cannot set attributes for device \"%s\": %s!\n", ttypath, strerror(errno));
+
 
 	if (speed && busses) {
         char *nbuf = calloc((sizeof(char) * 9) + 1, busses);
