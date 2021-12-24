@@ -1,0 +1,6 @@
+[submodule "submodules/opendbc"]
+	path = submodules/opendbc
+	url = https://github.com/commaai/opendbc.git
+[submodule "submodules/mightycore"]
+	path = submodules/mightycore
+	url = https://github.com/MCUdude/MightyCore.git
