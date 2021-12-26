@@ -11,4 +11,13 @@
 
 #define CAN_BUFFER_SIZE 128
 
+/*
+ * using binary mode switches cost of sending to serial from about 180us to 100us
+ * sending costa bout 350 us
+ */
+#define SLCAN_BASIC
+#define SLCAN_BINARY
+#define DEBUG_CAN
+
+//#define DEBUG
 #endif // __SETTINGS_H__

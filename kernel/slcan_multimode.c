@@ -69,13 +69,23 @@ static int maxdev = 1;		/*  MAX number of SLCAN channels;
 				                This can be overridden with
 				                insmod slcan_multimode.ko maxdev=nnn	*/
 static int maxbus = 3;
+static int binary_mode = 0;
 module_param(maxdev, int, 0);
 module_param(maxbus, int, 0);
+module_param(binary_mode, int, 0);
 MODULE_PARM_DESC(maxdev, "Maximum number of slcan interfaces");
 MODULE_PARM_DESC(maxbus, "Maximum number of busses per slcan serial interface");
+MODULE_PARM_DESC(binary_mode, "Use binary or normal slcan mode");
 
 /* maximum rx buffer len: extended CAN frame with timestamp */
 #define SLC_MTU (sizeof("B0T1111222281122334455667788EA5F\r")+1)
+#define SLC_B_MTU 15
+/*
+ * 2 preamble
+ * 4 id + bus |+ type
+ * 1 length
+ * 8 binary
+ */
 
 #define SLC_CMD_LEN 1
 #define SLC_BUS_LEN 2
@@ -111,6 +121,17 @@ struct slcan_bus {
 	struct net_device	*dev;		/* note: single device    */
     struct slcan        *sl;
     int id;
+};
+
+struct slcan_binary {
+    uint16_t preamble;
+    struct {
+        uint32_t bus : 2;
+        uint32_t rtr : 1;
+        uint32_t id : 29;
+    };
+    uint8_t len;
+    uint8_t data[8];
 };
 
 
@@ -164,96 +185,113 @@ static void slc_bump(struct slcan *sl)
 	int i, tmp, bus, busoffset;
 	u32 tmpid;
 	char *cmd = sl->rbuff;
+    struct slcan_binary slb;
 
 	memset(&cf, 0, sizeof(cf));
 
-    switch (*cmd) {
-        case 'B':
-            bus = (*(cmd+1)) - 0x30;
-            busoffset = SLC_BUS_LEN;
-            cmd += SLC_BUS_LEN;
-            break;
-        default:
-            bus = 0;
-            busoffset = 0;
-            break; // behave like a normal SLCAN frame and send that
-    }
+    if (!binary_mode) {
 
-    if (bus > sl->devcount) {
-        pr_err("slcan mm: Bus requested is higher than available busses: %d vs %d\n", bus, sl->devcount);
-        return;
-    }
+        switch (*cmd) {
+            case 'B':
+                bus = (*(cmd+1)) - 0x30;
+                busoffset = SLC_BUS_LEN;
+                cmd += SLC_BUS_LEN;
+                break;
+            default:
+                bus = 0;
+                busoffset = 0;
+                break; // behave like a normal SLCAN frame and send that
+        }
 
-    pr_info("slcan mm: received bus %d type %c\n", bus, *cmd);
-	switch (*cmd) {
-        case 'r':
-            cf.can_id = CAN_RTR_FLAG;
-            fallthrough;
-        case 't':
-            /* store dlc ASCII value and terminate SFF CAN ID string */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
-            cf.can_dlc = sl->rbuff[busoffset + SLC_CMD_LEN + SLC_SFF_ID_LEN];
-#else
-            cf.len = sl->rbuff[busoffset + SLC_CMD_LEN + SLC_SFF_ID_LEN];
-#endif
-            sl->rbuff[busoffset + SLC_CMD_LEN + SLC_SFF_ID_LEN] = 0;
-            /* point to payload data behind the dlc */
-            cmd += SLC_CMD_LEN + SLC_SFF_ID_LEN + 1;
-            break;
-        case 'R':
-            cf.can_id = CAN_RTR_FLAG;
-            fallthrough;
-        case 'T':
-            cf.can_id |= CAN_EFF_FLAG;
-            /* store dlc ASCII value and terminate EFF CAN ID string */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
-            cf.can_dlc = sl->rbuff[busoffset + SLC_CMD_LEN + SLC_EFF_ID_LEN];
-#else
-            cf.len = sl->rbuff[busoffset + SLC_CMD_LEN + SLC_EFF_ID_LEN];
-#endif
-            sl->rbuff[SLC_CMD_LEN + SLC_EFF_ID_LEN] = 0;
-            /* point to payload data behind the dlc */
-            cmd += SLC_CMD_LEN + SLC_EFF_ID_LEN + 1;
-            break;
-        default:
+        if (bus > sl->devcount) {
+            pr_err("slcan mm: Bus requested is higher than available busses: %d vs %d\n", bus, sl->devcount);
             return;
-	}
+        }
 
-	if (kstrtou32(sl->rbuff + SLC_CMD_LEN + busoffset, 16, &tmpid))
-		return;
+        pr_info("slcan mm: received bus %d type %c\n", bus, *cmd);
+        switch (*cmd) {
+            case 'r':
+                cf.can_id = CAN_RTR_FLAG;
+                fallthrough;
+            case 't':
+                /* store dlc ASCII value and terminate SFF CAN ID string */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
+                cf.can_dlc = sl->rbuff[busoffset + SLC_CMD_LEN + SLC_SFF_ID_LEN];
+#else
+                cf.len = sl->rbuff[busoffset + SLC_CMD_LEN + SLC_SFF_ID_LEN];
+#endif
+                sl->rbuff[busoffset + SLC_CMD_LEN + SLC_SFF_ID_LEN] = 0;
+                /* point to payload data behind the dlc */
+                cmd += SLC_CMD_LEN + SLC_SFF_ID_LEN + 1;
+                break;
+            case 'R':
+                cf.can_id = CAN_RTR_FLAG;
+                fallthrough;
+            case 'T':
+                cf.can_id |= CAN_EFF_FLAG;
+                /* store dlc ASCII value and terminate EFF CAN ID string */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
+                cf.can_dlc = sl->rbuff[busoffset + SLC_CMD_LEN + SLC_EFF_ID_LEN];
+#else
+                cf.len = sl->rbuff[busoffset + SLC_CMD_LEN + SLC_EFF_ID_LEN];
+#endif
+                sl->rbuff[SLC_CMD_LEN + SLC_EFF_ID_LEN] = 0;
+                /* point to payload data behind the dlc */
+                cmd += SLC_CMD_LEN + SLC_EFF_ID_LEN + 1;
+                break;
+            default:
+                return;
+        }
 
-	cf.can_id |= tmpid;
+        if (kstrtou32(sl->rbuff + SLC_CMD_LEN + busoffset, 16, &tmpid))
+            return;
+
+        cf.can_id |= tmpid;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
-	if (cf.can_dlc >= '0' && cf.can_dlc < '9')
-		cf.can_dlc -= '0';
-	else
-		return;
+        if (cf.can_dlc >= '0' && cf.can_dlc < '9')
+            cf.can_dlc -= '0';
+        else
+            return;
 #else
-	/* get len from sanitized ASCII value */
-	if (cf.len >= '0' && cf.len < '9')
-		cf.len -= '0';
-	else
-		return;
+        /* get len from sanitized ASCII value */
+        if (cf.len >= '0' && cf.len < '9')
+            cf.len -= '0';
+        else
+            return;
 #endif
 
-	/* RTR frames may have a dlc > 0 but they never have any data bytes */
-	if (!(cf.can_id & CAN_RTR_FLAG)) {
+        /* RTR frames may have a dlc > 0 but they never have any data bytes */
+        if (!(cf.can_id & CAN_RTR_FLAG)) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
-		for (i = 0; i < cf.can_dlc; i++) {
+            for (i = 0; i < cf.can_dlc; i++) {
 #else
-		for (i = 0; i < cf.len; i++) {
+            for (i = 0; i < cf.len; i++) {
 #endif
-			tmp = hex_to_bin(*cmd++);
-			if (tmp < 0)
-				return;
-			cf.data[i] = (tmp << 4);
-			tmp = hex_to_bin(*cmd++);
-			if (tmp < 0)
-				return;
-			cf.data[i] |= tmp;
-		}
-	}
+                tmp = hex_to_bin(*cmd++);
+                if (tmp < 0)
+                    return;
+                cf.data[i] = (tmp << 4);
+                tmp = hex_to_bin(*cmd++);
+                if (tmp < 0)
+                    return;
+                cf.data[i] |= tmp;
+            }
+        }
+    } else {
+        // binary mode
+        memcpy(&slb, cmd, SLC_B_MTU);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
+        cf.can_dlc = slb.len;
+#else
+        cf.len = slb.len;
+#endif
+        bus = (slb.id & 0xC0000000) >> 29;
+        if ((slb.id & 0x1FFFFFFF) > 0x7FF) cf.can_id |= CAN_EFF_FLAG;
+        if (slb.id & 0x20000000) cf.can_id = CAN_RTR_FLAG;
+        cf.can_id |= slb.id;
+        memcpy(cf.data, slb.data, slb.len);
+    }
 
 	skb = dev_alloc_skb(sizeof(struct can_frame) +
 			    sizeof(struct can_skb_priv));
@@ -284,23 +322,51 @@ static void slc_bump(struct slcan *sl)
 static void slcan_unesc(struct slcan *sl, unsigned char s)
 {
     int i;
-	if ((s == '\r') || (s == '\a')) { /* CR or BEL ends the pdu */
-		if (!test_and_clear_bit(SLF_ERROR, &sl->flags) &&
-		    (sl->rcount > 4))  {
-			slc_bump(sl);
-		}
-		sl->rcount = 0;
-	} else {
-		if (!test_bit(SLF_ERROR, &sl->flags))  {
-			if (sl->rcount < SLC_MTU)  {
-				sl->rbuff[sl->rcount++] = s;
-				return;
-			} else {
-                for (i = 0; i < sl->devcount; i++) sl->dev[i]->stats.rx_over_errors++;
-				set_bit(SLF_ERROR, &sl->flags);
-			}
-		}
-	}
+    if (!binary_mode) {
+        if ((s == '\r') || (s == '\a')) { /* CR or BEL ends the pdu */
+            if (!test_and_clear_bit(SLF_ERROR, &sl->flags) &&
+                (sl->rcount > 4))  {
+                slc_bump(sl);
+            }
+            sl->rcount = 0;
+        } else {
+            if (!test_bit(SLF_ERROR, &sl->flags))  {
+                if (sl->rcount < SLC_MTU)  {
+                    sl->rbuff[sl->rcount++] = s;
+                    return;
+                } else {
+                    for (i = 0; i < sl->devcount; i++) sl->dev[i]->stats.rx_over_errors++;
+                    set_bit(SLF_ERROR, &sl->flags);
+                }
+            }
+        }
+    } else {
+        // preamble detected, pushing
+        if (sl->rcount < SLC_MTU && sl->rbuff[0] == 0xAA && sl->rbuff[1] == 0x55) {
+            sl->rbuff[sl->rcount++] = s;
+        } else if (sl->rbuff[0] != 0xAA) {
+            // clear buffer
+            sl->rcount = 0;
+            if (s == 0xAA) {
+                sl->rbuff[sl->rcount++] = s;
+            }
+        } else if (sl->rbuff[1] != 0x55) {
+            if (s == 0x55) {
+                sl->rbuff[sl->rcount++] = s;
+            } else {
+                sl->rcount = 0;
+            }
+        } else if (sl->rcount == SLC_B_MTU) {
+            if (!test_and_clear_bit(SLF_ERROR, &sl->flags)) {
+                slc_bump(sl);
+            }
+            sl->rcount = 0;
+        } else {
+            // overflow
+            for (i = 0; i < sl->devcount; i++) sl->dev[i]->stats.rx_over_errors++;
+            set_bit(SLF_ERROR, &sl->flags);
+        }
+    }
 }
 
  /************************************************************************
@@ -376,6 +442,64 @@ static void slc_encaps(struct slcan *sl, struct can_frame *cf, struct net_device
 #else
 	nd->stats.tx_bytes += cf->len;
 #endif
+}
+
+
+static void slc_open_bus(struct slcan *sl, int bus,struct net_device *nd)
+{
+	int actual;
+	unsigned char *pos;
+
+	pos = sl->xbuff;
+
+    *pos++ = 'D';
+    *pos++ = 0x30 + binary_mode;
+    *pos++ = '\r';
+    *pos++ = 'B';
+    *pos++ = 0x30 + bus;
+    *pos++ = 'O';
+	*pos++ = '\r';
+
+	/* Order of next two lines is *very* important.
+	 * When we are sending a little amount of data,
+	 * the transfer may be completed inside the ops->write()
+	 * routine, because it's running with interrupts enabled.
+	 * In this case we *never* got WRITE_WAKEUP event,
+	 * if we did not request it before write operation.
+	 *       14 Oct 1994  Dmitry Gorodchanin.
+	 */
+	set_bit(TTY_DO_WRITE_WAKEUP, &sl->tty->flags);
+	actual = sl->tty->ops->write(sl->tty, sl->xbuff, pos - sl->xbuff);
+	sl->xleft = (pos - sl->xbuff) - actual;
+	sl->xhead = sl->xbuff + actual;
+	nd->stats.tx_bytes += 4;
+}
+
+static void slc_close_bus(struct slcan *sl, int bus, struct net_device *nd)
+{
+	int actual;
+	unsigned char *pos;
+
+	pos = sl->xbuff;
+
+    *pos++ = 'B';
+    *pos++ = 0x30 + bus;
+    *pos++ = 'C';
+	*pos++ = '\r';
+
+	/* Order of next two lines is *very* important.
+	 * When we are sending a little amount of data,
+	 * the transfer may be completed inside the ops->write()
+	 * routine, because it's running with interrupts enabled.
+	 * In this case we *never* got WRITE_WAKEUP event,
+	 * if we did not request it before write operation.
+	 *       14 Oct 1994  Dmitry Gorodchanin.
+	 */
+	set_bit(TTY_DO_WRITE_WAKEUP, &sl->tty->flags);
+	actual = sl->tty->ops->write(sl->tty, sl->xbuff, pos - sl->xbuff);
+	sl->xleft = (pos - sl->xbuff) - actual;
+	sl->xhead = sl->xbuff + actual;
+	nd->stats.tx_bytes += 4;
 }
 
 /* Write out any remaining transmit buffer. Scheduled when tty is writable */
@@ -469,10 +593,14 @@ static int slc_close(struct net_device *dev)
 	struct slcan_bus *bus = netdev_priv(dev);
 
 	spin_lock_bh(&bus->sl->lock);
+    slc_close_bus(bus->sl, bus->id, dev);
+
 	if (bus->sl->tty) {
 		/* TTY discipline is running. */
 		clear_bit(TTY_DO_WRITE_WAKEUP, &bus->sl->tty->flags);
 	}
+    // send close command
+
 	netif_stop_queue(dev);
 	bus->sl->rcount   = 0;
 	bus->sl->xleft    = 0;
@@ -490,6 +618,9 @@ static int slc_open(struct net_device *dev)
 		return -ENODEV;
 
 	bus->sl->flags &= (1 << SLF_INUSE);
+	spin_lock_bh(&bus->sl->lock);
+    slc_open_bus(bus->sl, bus->id, dev);
+	spin_unlock_bh(&bus->sl->lock);
 	netif_start_queue(dev);
     pr_info("slcan mm: netdev %s went up\n", dev->name);
 	return 0;

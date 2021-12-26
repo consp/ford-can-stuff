@@ -1,9 +1,11 @@
 #include <SPI.h>
 
+
 #include "settings.h"
 #include "can_data.h"
 #include "slcan_def.h"
 #include "mcp2515/mcp_can.h"
+#include "canmsg.h"
 
 MCP_CAN CAN0(CAN0_CS);                              // CAN0 interface usins CS on digital pin 10
 MCP_CAN CAN1(CAN1_CS);                               // CAN1 interface using CS on digital pin 9
@@ -14,7 +16,8 @@ can_data can_buffer[CAN_BUFFER_SIZE]; // sufficiently big
 uint8_t can_buffer_first = 0;
 uint8_t can_buffer_last = 0;
 
-uint8_t slcan_mode = SLCAN_MODE_CLOSED;
+uint8_t slcan_mode[3] = { SLCAN_MODE_CLOSED, SLCAN_MODE_CLOSED, SLCAN_MODE_CLOSED };
+
 char msgbuf[128];
 uint8_t flags;
 uint32_t rcount = 0;
@@ -23,22 +26,15 @@ uint8_t overflow = 0;
 volatile uint8_t inttrig0 = 0;
 volatile uint8_t inttrig1 = 0;
 volatile uint8_t inttrig2 = 0;
+uint8_t canmode = SLCAN_MODE_BASIC;
 
-#define SLCAN_BASIC
-//#define DEBUG
-
-/*
- * PCINT7 for 0
- * PCINT16 for 1
- * PCINT31 for 2
- */
 #define setv(p, v) *((volatile uint8_t *) &p) = v;
 void ISR_SETUP(void) {
     // set pins as input
     PCIFR = 0x0F;
-    pinMode(CAN0_INT, INPUT);
-    pinMode(CAN1_INT, INPUT);
-    pinMode(CAN2_INT, INPUT);
+    pinMode(CAN0_INT, INPUT_PULLUP);
+    pinMode(CAN1_INT, INPUT_PULLUP);
+    pinMode(CAN2_INT, INPUT_PULLUP);
 
     *(uint8_t *)ADCSRA = 0x00;
     volatile uint8_t *ddra = (volatile uint8_t *) &DDRA, *ddrb = (volatile uint8_t *) &DDRB, *ddrc = (volatile uint8_t *) &DDRC, *ddrd = (volatile uint8_t *) &DDRD;
@@ -190,6 +186,8 @@ void slcan() {
     uint8_t l = 0; //, port = 0;
     uint32_t id = 0;
     uint8_t error = 0;
+    uint8_t bus = 255;
+    uint8_t i, j;
 
     MCP_CAN *current_can = NULL;
 
@@ -218,26 +216,45 @@ void slcan() {
             switch (slcan_buffer[1]) {
                 case 0X31:
                     current_can = &CAN1;
+                    bus = 1;
                     break;
                 case 0x32:
                     current_can = &CAN2;
+                    bus = 2;
                     break;
                 case 0x30:
                     current_can = &CAN0;
+                    bus = 0;
                 default:
                     current_can = NULL;
+                    bus = 255;
                     break;
             }
             memmove(slcan_buffer, &slcan_buffer[2], slcan_buffer_length - 2);
             command_end -= 2;
             slcan_buffer_length -= 2;
-#ifdef DEBUG
-            printhex("New CMD: ", slcan_buffer, command_end);
-#endif
         }
 
         switch (slcan_buffer[0]) {
-
+            case SLCAN_CMD_SEND_MODE:
+                if (command_end < 2) {
+                    response[0] = SLCAN_ERROR;
+                    response_length = 1;
+                    error = 1;
+                } else {
+                    switch(slcan_buffer[1]) {
+                        case '1':
+                            canmode = (canmode & 0xCF) | SLCAN_MODE_BINARY;
+                            break;
+                        default:
+                        case '0':
+                            canmode = (canmode & 0xCF) | SLCAN_MODE_BASIC;
+                            break;
+                    }
+                    response[0] = SLCAN_OK;
+                    response_length = 1;
+                }
+                break;
             case SLCAN_CMD_SERIAL:
                 response[0] = SLCAN_CMD_SERIAL;
                 memcpy(&response[1], SLCAN_SERIAL, sizeof(SLCAN_SERIAL) - 1);
@@ -309,9 +326,6 @@ void slcan() {
                 ext = 1;
             case SLCAN_CMD_RTR:
             case SLCAN_CMD_TRANSMIT:
-#ifdef DEBUG
-                printhex("SND: ", slcan_buffer, command_end);
-#endif
                 if (slcan_buffer_length < 5) {
                     response[0] = SLCAN_ERROR;
                     response_length = 1;
@@ -405,21 +419,42 @@ void slcan() {
                 }
                 break;
             case SLCAN_CMD_OPEN_NORMAL:
-                slcan_mode = SLCAN_MODE_OPEN;
+                if (bus == 255) {
+                    i = 0; j = 2;
+                } else {
+                    i = bus; j = bus;
+                }
+                for (; i <= j; i++) {
+                    slcan_mode[i] = SLCAN_MODE_OPEN;
+                }
                 // reset buffer
                 can_data_reset();
                 response[0] = SLCAN_CMD_OPEN_NORMAL;
                 response_length = 1;
                 break;
             case SLCAN_CMD_OPEN_LISTEN:
-                slcan_mode = SLCAN_MODE_LISTEN;
+                if (bus == 255) {
+                    i = 0; j = 2;
+                } else {
+                    i = bus; j = bus;
+                }
+                for (; i <= j; i++) {
+                    slcan_mode[i] = SLCAN_MODE_LISTEN;
+                }
                 // reset buffer
                 can_data_reset();
                 response[0] = SLCAN_CMD_OPEN_LISTEN;
                 response_length = 1;
                 break;
             case SLCAN_CMD_CLOSE:
-                slcan_mode = SLCAN_MODE_CLOSED;
+                if (bus == 255) {
+                    i = 0; j = 2;
+                } else {
+                    i = bus; j = bus;
+                }
+                for (; i <= j; i++) {
+                    slcan_mode[i] = SLCAN_MODE_CLOSED;
+                }
                 can_data_reset();
                 response[0] = SLCAN_CMD_CLOSE;
                 response_length = 1;
@@ -453,11 +488,11 @@ void slcan() {
                 }
                 switch(slcan_buffer[1]) {
                     case '0':
-                        slcan_mode &= ~SLCAN_MODE_TIMESTAMP_ENABLED;
+                        canmode &= ~SLCAN_MODE_TIMESTAMP_ENABLED;
                         break;
                     case '1':
                     default:
-                        slcan_mode |= SLCAN_MODE_TIMESTAMP_ENABLED;
+                        canmode |= SLCAN_MODE_TIMESTAMP_ENABLED;
                         break;
                 }
                 response[0] = SLCAN_OK;
@@ -479,16 +514,9 @@ void slcan() {
     }
 
     if (error) {
-#ifdef DEBUG
-        printhex("Buffer: ", slcan_buffer, slcan_buffer_length);
-#endif
     }
 
     if (command_end > 0) {
-#ifdef DEBUG
-        printhex("Buffer: ", slcan_buffer, slcan_buffer_length);
-        printhex("CMD: ", slcan_buffer, command_end);
-#endif
         if (slcan_buffer_length - command_end > 0) {
             memmove(slcan_buffer, &slcan_buffer[command_end], slcan_buffer_length - command_end);
             slcan_buffer_length -= command_end;
@@ -502,19 +530,21 @@ void slcan() {
 
 
     if (response_length > 0) {
-#ifdef DEBUG
-        printhex("resp: ", response, response_length);
-#endif
         Serial.write(response, response_length);
         Serial.flush();
         response_length = 0;
     }
 }
 
+unsigned long ms = 0, time_apim = 0, slcounter = 0;
+
 void setup() {
     can_buffer_first = can_buffer_last = 0; // reset
 
-    Serial.begin(500000);
+/*    pinMode(8, INPUT_PULLUP);
+    pinMode(9, INPUT_PULLUP);*/
+    Serial.begin(2000000);
+    //Serial.begin(500000);
 
     ISR_SETUP();
     // clear all interrupts;
@@ -522,6 +552,7 @@ void setup() {
     pinMode(CAN0_CS, OUTPUT);
     pinMode(CAN1_CS, OUTPUT);
     pinMode(CAN2_CS, OUTPUT);
+
 
     if(CAN0.begin(MCP_STDEXT, CAN_500KBPS, MCP_8MHZ | MCP_CLKOUT_ENABLE) == CAN_OK) {
         Serial.print("CAN0: Init OK!\r\n");
@@ -550,6 +581,7 @@ void setup() {
     CAN1.resetInt();
     CAN2.resetInt();
 
+    ms = slcounter = time_apim = millis();
 }
 
 can_data msg;
@@ -569,113 +601,140 @@ uint16_t speed = 0;
 uint16_t rpm = 0;
 
 uint8_t resetcnt = 0;
-uint16_t slcounter = 0;
 
-#define PREAMBLE B10000001
-#define POSTAMBLE B01111110
 
-struct pt {
-    uint8_t pre;
-    struct {
-        uint8_t port : 2;
-        uint8_t rtr : 1;
-        uint8_t ext : 1;
-        uint8_t len : 4;
-    };
-    uint32_t id;
-    uint8_t data[8]; // we always send all
-    uint8_t post;
-};
+extern apim_1 APIM_SIGNAL_1;
+extern apim_2 APIM_SIGNAL_2;
+extern apim_3 APIM_SIGNAL_3;
 
-struct pt serialcan;
+void send_can(uint8_t d, uint32_t id, uint8_t len, uint8_t *data) {
+    
+    MCP_CAN *bus = NULL;
+    switch (d) {
+        case (0):
+            bus = &CAN0;
+            break;
+        case (1):
+            bus = &CAN1;
+            break;
+        case (2):
+            bus = &CAN2;
+            break;
+        default:
+            bus = &CAN0;
+            break;
+    }
+    bus->sendMsgBuf(id, len, data);
+}
+
+
 void loop() {
     /*
      * Read uart, do things, cleanup interrupt buffer, loop.
      */
 
     if (can_data_available()) {
-        if (slcan_mode == SLCAN_MODE_OPEN || slcan_mode == SLCAN_MODE_LISTEN) {
+#ifdef DEBUG
+        unsigned long mu = micros();
+        unsigned long mu3 = 0;
+#endif
+        uint8_t m = (slcan_mode[0] & 0x03) | (slcan_mode[1] & 0x03) | (slcan_mode[2] & 0x03); // anyone listening
+        if (m) {
             // send data
             can_data_pull(&msg);
-#ifdef SLCAN_BASIC
-            int i;
-            sendbuffer[sendbuffer_length++] = SLCAN_CANBUS_SWITCH; // set bus
-            sendbuffer[sendbuffer_length++] = 0x30 + msg.bus;
-            // copy id
-			//
-            if (msg.ext) {
-                sendbuffer[sendbuffer_length++] = msg.rtr ? SLCAN_CMD_RTR_EXT : SLCAN_CMD_TRANSMIT_EXT;
-                cv_hex((msg.id & 0xFF000000) >> 24, &sendbuffer[sendbuffer_length]);
-                cv_hex((msg.id & 0x00FF0000) >> 16, &sendbuffer[sendbuffer_length+2]);
-                cv_hex((msg.id & 0x0000FF00) >> 8, &sendbuffer[sendbuffer_length+4]);
-                cv_hex((msg.id & 0x000000FF), &sendbuffer[sendbuffer_length+6]);
-                sendbuffer_length += 8;
-            } else {
-                cv_hex((msg.id & 0x0000FF00) >> 8, &sendbuffer[sendbuffer_length]);
-                cv_hex((msg.id & 0x000000FF), &sendbuffer[sendbuffer_length+2]);
-                sendbuffer[sendbuffer_length] = msg.rtr ? SLCAN_CMD_RTR : SLCAN_CMD_TRANSMIT;
-                sendbuffer_length += 4;
+#if defined(SLCAN_BINARY) && defined(SLCAN_BASIC)
+            if (canmode & SLCAN_MODE_BINARY)
+#endif
+#ifdef SLCAN_BINARY
+#pragma message "Binary can mode enabled"
+            {
+                slcan_binary b;
+                b.preamble = SLCAN_BINARY_PREAMBLE;
+                b.bus = msg.bus & 0x03;
+                b.rtr = msg.rtr;
+                b.len = msg.len;
+                b.id = msg.id;
+                memcpy(b.data, msg.data, msg.len);
+#ifdef DEBUG
+                mu3 = micros();
+#endif
+                Serial.write((uint8_t *)&b, sizeof(slcan_binary) - (8 - b.len));
             }
+#endif
+#if defined(SLCAN_BINARY) && defined(SLCAN_BASIC)
+            else
+#endif
+#ifdef SLCAN_BASIC 
+#pragma message "Basic can mode enabled"
+            {
+                int i;
+                sendbuffer[sendbuffer_length++] = SLCAN_CANBUS_SWITCH; // set bus
+                sendbuffer[sendbuffer_length++] = 0x30 + msg.bus;
+                // copy id
+                //
+                if (msg.ext) {
+                    sendbuffer[sendbuffer_length++] = msg.rtr ? SLCAN_CMD_RTR_EXT : SLCAN_CMD_TRANSMIT_EXT;
+                    cv_hex((msg.id & 0xFF000000) >> 24, &sendbuffer[sendbuffer_length]);
+                    cv_hex((msg.id & 0x00FF0000) >> 16, &sendbuffer[sendbuffer_length+2]);
+                    cv_hex((msg.id & 0x0000FF00) >> 8, &sendbuffer[sendbuffer_length+4]);
+                    cv_hex((msg.id & 0x000000FF), &sendbuffer[sendbuffer_length+6]);
+                    sendbuffer_length += 8;
+                } else {
+                    cv_hex((msg.id & 0x0000FF00) >> 8, &sendbuffer[sendbuffer_length]);
+                    cv_hex((msg.id & 0x000000FF), &sendbuffer[sendbuffer_length+2]);
+                    sendbuffer[sendbuffer_length] = msg.rtr ? SLCAN_CMD_RTR : SLCAN_CMD_TRANSMIT;
+                    sendbuffer_length += 4;
+                }
 
-            sendbuffer[sendbuffer_length++] = 0x30 + msg.len;
+                sendbuffer[sendbuffer_length++] = 0x30 + msg.len;
 
-            for (i = 0; i < msg.len; i++) {
-                cv_hex(msg.data[i], &sendbuffer[sendbuffer_length]);
-                sendbuffer_length += 2;
+                for (i = 0; i < msg.len; i++) {
+                    cv_hex(msg.data[i], &sendbuffer[sendbuffer_length]);
+                    sendbuffer_length += 2;
+                }
+
+                if (canmode & SLCAN_MODE_TIMESTAMP_ENABLED) {
+                    cv_hex((timestamp & 0xFF00) >> 8, &sendbuffer[sendbuffer_length]);
+                    cv_hex((timestamp & 0x00FF), &sendbuffer[sendbuffer_length+2]);
+                    sendbuffer_length += 4;
+                }
+                sendbuffer[sendbuffer_length++] = SLCAN_OK;
+#ifdef DEBUG
+                mu3 = micros();
+#endif
+                Serial.write(sendbuffer, sendbuffer_length);
             }
-
-            if (slcan_mode & SLCAN_MODE_TIMESTAMP_ENABLED) {
-                cv_hex((timestamp & 0xFF00) >> 8, &sendbuffer[sendbuffer_length]);
-                cv_hex((timestamp & 0x00FF), &sendbuffer[sendbuffer_length+2]);
-                sendbuffer_length += 4;
-            }
-            sendbuffer[sendbuffer_length++] = SLCAN_OK;
-
-            Serial.write(sendbuffer, sendbuffer_length);
-            //Serial.flush();
-#else
-            serialcan.port = msg.bus;
-            serialcan.id = msg.id;
-            serialcan.ext = msg.ext;
-            serialcan.rtr = msg.rtr;
-            serialcan.pre = PREAMBLE;
-            serialcan.post = POSTAMBLE;
-            memcpy(serialcan.data, msg.data, 8);
-            Serial.write((uint8_t *) &serialcan, sizeof(struct pt));
 #endif
     	    sendbuffer_length = 0;
         }
-    }
-
-    if (slcounter == 1024) {
-        slcan();
-        slcounter = 0;
-    }
-
-/*    if (counter > 10000) {
-        counter = 0;
-        uint8_t x0 = 0, x1 = 0, x2 = 0, e0 = 0, e1 = 0, e2 = 0, r0 = 0, r1 = 0, r2 = 0;
-        x0 = CAN0.checkReceive();
-        x1 = CAN1.checkReceive();
-        x2 = CAN2.checkReceive();
-        e0 = CAN0.getError();
-        e1 = CAN1.getError();
-        e2 = CAN2.getError();
-        r0 = CAN0.errorCountRX();
-        r1 = CAN1.errorCountRX();
-        r2 = CAN2.errorCountRX();
-
-        uint8_t V1 = *((uint8_t *) &PINA);//digitalRead(CAN0_INT);
-        uint8_t V2 = *((uint8_t *) &PINC);// digitalRead(CAN1_INT);
-        uint8_t V3 = *((uint8_t *) &PIND);//digitalRead(CAN2_INT);
-        sprintf(msgbuf, "E: %02X %02X %02X | %02X %02X %02X | %d %d %d | %02X %02X %02X | %d %02X %lu ", e0, e1, e2, r0, r1, r2, x0, x1, x2, V1, V2, V3, overflow, can_buffer_first <= can_buffer_last ? can_buffer_last - can_buffer_first : CAN_BUFFER_SIZE - (can_buffer_first - can_buffer_last) , rcount);
-
-        //sprintf(msgbuf, "%02X %02X %02X", V1, V2, V3);
+#ifdef DEBUG
+        unsigned long mu2 = micros();
+        sprintf(msgbuf, "\rTT: %10ld us - %10ld us", mu3 - mu, mu2 - mu3);
         Serial.println(msgbuf);
-        counter = 0;
-    }*/
+#endif
+    }
+    ms = millis();
 
+
+    if (ms > slcounter + 100) { // 100ms check
+#ifdef DEBUG
+        unsigned long mu = micros();
+#endif
+        slcan();
+        slcounter = ms;
+#ifdef DEBUG
+        unsigned long mu2 = micros();
+        sprintf(msgbuf, "\rSL: %10ld", mu2 - mu);
+        Serial.println(msgbuf);
+#endif
+
+    }
+
+#ifdef DEBUG_CAN
     if (counter > 10000) {
+#ifdef DEBUG
+        unsigned long mu = micros();
+#endif
         rpm += 100;
         speed += 250;
         uint8_t dd[8] = { (uint8_t) (((rpm * 4) & 0xFF00) >> 8), (uint8_t) ((rpm*4) & 0x00FF), 0x00, 0x00, (uint8_t) ((speed & 0xFF00) >> 8), (uint8_t) (speed & 0x00FF), 0x00, 0x00};
@@ -686,37 +745,34 @@ void loop() {
         if (rpm > 2000) rpm = 0;
         if (speed > 20000) speed = 0;
         counter = 0;
+#ifdef DEBUG
+        unsigned long mu2 = micros();
+        sprintf(msgbuf, "\rSD: %10ld", mu2 - mu);
+        Serial.println(msgbuf);
+#endif
     }
+#endif
 
-    // due to how the PCINT ISRs work we might miss the initial int
-    // and need to fix this.
-/*    if (digitalRead(CAN0_INT) == 0) {
-        // call ISR anyway
-        pinMode(CAN0_INT, OUTPUT);
-        digitalWrite(CAN0_INT, 1);
-        pinMode(CAN0_INT, INPUT);
+#ifdef WAKEUP_APIM
+    if (ms > time_apim + 1000) {
+        time_apim = ms;
+        send_can(APIM_SIGNAL_1.bus, APIM_SIGNAL_1.id, APIM_SIGNAL_1.len, APIM_SIGNAL_1.data);
+        send_can(APIM_SIGNAL_2.bus, APIM_SIGNAL_2.id, APIM_SIGNAL_2.len, APIM_SIGNAL_2.data);
+        send_can(APIM_SIGNAL_3.bus, APIM_SIGNAL_3.id, APIM_SIGNAL_3.len, APIM_SIGNAL_3.data);
     }
-    if (digitalRead(CAN1_INT) == 0) {
-        // call ISR anyway
-        pinMode(CAN1_INT, OUTPUT);
-        digitalWrite(CAN1_INT, 1);
-        pinMode(CAN1_INT, INPUT);
-    }
-    if (digitalRead(CAN2_INT) == 0) {
-        // call ISR anyway
-        pinMode(CAN2_INT, OUTPUT);
-        digitalWrite(CAN2_INT, 1);
-        pinMode(CAN2_INT, INPUT);
-    }
-*/
+#endif
 
-    uint32_t id = 0;
-    uint8_t ext = 0;
-    uint8_t len = 0;
+    uint32_t id;
+    uint8_t ext;
+    uint8_t len;
     uint8_t buf[8];
     uint8_t resp;
     // read buffers out of int
-    if (inttrig0) {
+    if (inttrig0 && (slcan_mode[0] & 0x03)) {
+#ifdef DEBUG
+        unsigned long mu = micros();
+#endif
+
         resp = CAN0.readMsgBuf(&id, &ext, &len, buf);
         if (CAN_OK == resp) {
             can_data_put(CAN_HSCAN, id & 0x1FFFFFFF, (id & 0x80000000) >> 24, (id & 0x40000000) >> 24, len, buf);
@@ -724,8 +780,13 @@ void loop() {
         }
         inttrig0 = 0;
         digitalWrite(CAN0_INT, 1);
+#ifdef DEBUG
+        unsigned long mu2 = micros();
+        sprintf(msgbuf, "\rRD: %10ld", mu2 - mu);
+        Serial.println(msgbuf);
+#endif
     }
-    if (inttrig1) {
+    if (inttrig1 && (slcan_mode[1] & 0x03)) {
 
         resp = CAN1.readMsgBuf(&id, &ext, &len, buf);
 
@@ -736,7 +797,7 @@ void loop() {
         inttrig1 = 0;
         digitalWrite(CAN1_INT, 1);
     }
-    if (inttrig2) {
+    if (inttrig2 && (slcan_mode[2] & 0x03)) {
         resp = CAN2.readMsgBuf(&id, &ext, &len, buf);
 
         if (CAN_OK == resp) {
@@ -747,21 +808,6 @@ void loop() {
         digitalWrite(CAN2_INT, 1);
     }
 
-    // periodically set the trigers to allow for interrupt glitches
-/*    switch (resetcnt) {
-        case 66:
-            inttrig0 = 1;
-            break;
-        case 132:
-            inttrig1 = 1;
-            break;
-        case 198:
-            inttrig2 = 1;
-            resetcnt = 0;
-            break;
-        default:
-            break;
-    }*/
     if (resetcnt > 66) {
         inttrig0 = inttrig1 = inttrig2 = 1;
         resetcnt = 0;
@@ -770,7 +816,6 @@ void loop() {
 
     counter++;
     resetcnt++;
-    slcounter++;
 }
 
 

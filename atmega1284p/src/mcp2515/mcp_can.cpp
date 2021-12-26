@@ -1100,8 +1100,8 @@ INT8U MCP_CAN::setMsg(INT32U id, INT8U rtr, INT8U ext, INT8U len, INT8U *pData)
     m_nRtr    = rtr;
     m_nExtFlg = ext;
     m_nDlc    = len;
-    for(i = 0; i<MAX_CHAR_IN_MESSAGE; i++)
-        m_nDta[i] = *(pData+i);
+    for(i = 0; i<len; i++)
+        m_nDta[i] = pData[i];
 	
     return MCP2515_OK;
 }
