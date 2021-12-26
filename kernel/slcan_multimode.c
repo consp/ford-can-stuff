@@ -592,8 +592,10 @@ static int slc_close(struct net_device *dev)
 {
 	struct slcan_bus *bus = netdev_priv(dev);
 
-	spin_lock_bh(&bus->sl->lock);
+	// close first
     slc_close_bus(bus->sl, bus->id, dev);
+
+	spin_lock_bh(&bus->sl->lock);
 
 	if (bus->sl->tty) {
 		/* TTY discipline is running. */
@@ -926,16 +928,15 @@ static void slcan_close(struct tty_struct *tty)
 	for (i = 0; i < sl->devcount; i++) unregister_netdev(sl->dev[i]);
 	/* This will complete via sl_free_netdev */
 }
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,12,0)
 static int slcan_hangup(struct tty_struct *tty)
 #else
 static void slcan_hangup(struct tty_struct *tty)
 #endif
-    
 {
 	slcan_close(tty);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,12,0)
     return 0;
 #endif
 }

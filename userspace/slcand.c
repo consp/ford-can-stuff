@@ -41,7 +41,6 @@
 #include <syslog.h>
 #include <termios.h>
 #include <unistd.h>
-#include "slcand_baudset.h"
 
 /* Change this to whatever your daemon is called */
 #define DAEMON_NAME "slcand"
