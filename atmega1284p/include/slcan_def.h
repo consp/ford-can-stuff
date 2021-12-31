@@ -54,17 +54,29 @@
 
 #define SLCAN_MSG_LEN 32
 
-#define SLCAN_BINARY_PREAMBLE 0x55AA
+#define SLCAN_BINARY_PREAMBLE 0xA5
+
+#define BUS(n) (n & 0xC0000000)
+#define RTR(n) (n & 0x20000000)
+#define ID(n)  (n & 0x1FFFFFFF)
+
+#define gBUS(x) ((BUS(x.idfield)) >> 30)
+#define gRTR(x) ((RTR(x.idfield)) >> 29)
+#define gID(x) (ID(x.idfield))
+
+#define gpBUS(x) ((BUS(x->idfield)) >> 30)
+#define gpRTR(x) ((RTR(x->idfield)) >> 29)
+#define gpID(x) (ID(x->idfield))
+
+#define IDFIELD(x, y, z) (((uint32_t) x) << 30 | ((uint32_t) y) << 29 | ((uint32_t) z))
 
 typedef struct slcan_binary_t {
-    uint16_t preamble; //always 0x55AA
-    struct {
-        uint32_t bus : 2;
-        uint32_t rtr : 1;
-        uint32_t id : 29;
-    };
+    uint8_t preamble; 
+    uint32_t idfield;
     uint8_t len;
     uint8_t data[8];
+    uint8_t crc;
 } slcan_binary;
+
 
 #endif //__SLCAN_DEF_H__

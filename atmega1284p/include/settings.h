@@ -1,7 +1,10 @@
 #ifndef __SETTINGS_H__
 #define __SETTINGS_H__
 
-#define CAN0_CS 0
+
+#include "pins_arduino.h"
+
+#define CAN0_CS 0 
 #define CAN1_CS 1
 #define CAN2_CS 2
 
@@ -12,12 +15,14 @@
 #define CAN_BUFFER_SIZE 128
 
 /*
- * using binary mode switches cost of sending to serial from about 180us to 100us
- * sending costa bout 350 us
+ * using binary mode switches cost of sending to serial from about 180us to 95us
+ * sending costs about 350-400 us
  */
 #define SLCAN_BASIC
 #define SLCAN_BINARY
-#define DEBUG_CAN
+//#define DEBUG_CAN
+
+//#define WAKEUP_APIM
 
 //#define DEBUG
 #endif // __SETTINGS_H__

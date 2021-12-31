@@ -88,16 +88,18 @@
 #define MCP_EFLG_EWARN      (1<<0)
 #define MCP_EFLG_ERRORMASK  (0xF8)                                      /* 5 MS-Bits                    */
 
-//#define MCP_BxBFS_MASK    0x30
-//#define MCP_BxBFE_MASK    0x0C
-//#define MCP_BxBFM_MASK    0x03
-
-#define MCP_BxBFS_MASK    0x00
-#define MCP_BxBFE_MASK    0x00
+#define MCP_BxBFS_MASK    0x30
+#define MCP_BxBFE_MASK    0x0C
 #define MCP_BxBFM_MASK    0x03
 
-#define MCP_BxRTS_MASK    0x38
-#define MCP_BxRTSM_MASK   0x07
+/*#define MCP_BxBFS_MASK    0x00
+#define MCP_BxBFE_MASK    0x00
+#define MCP_BxBFM_MASK    0x03*/
+
+#define MCP_BxRTS_MASK    0x00
+#define MCP_BxRTSM_MASK   0x00
+//#define MCP_BxRTS_MASK    0x38
+//#define MCP_BxRTSM_MASK   0x07
 
 /*
  *   Define MCP2515 register addresses

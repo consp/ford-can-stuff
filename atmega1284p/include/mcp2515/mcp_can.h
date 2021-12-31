@@ -59,7 +59,7 @@ class MCP_CAN
                              const INT8U value);
 
     void mcp2515_setRegisterS(const INT8U address,                      // Set MCP2515 successive registers
-                              const INT8U values[],
+                              INT8U values[],
                               const INT8U n);
 
     void mcp2515_initCANBuffers(void);
@@ -119,6 +119,7 @@ public:
     INT8U readMsgBuf(INT32U *id, INT8U *ext, INT8U *len, INT8U *buf);   // Read message from receive buffer
     INT8U readMsgBuf(INT32U *id, INT8U *len, INT8U *buf);               // Read message from receive buffer
     void resetInt();
+    INT8U getInt(void);
     INT8U checkReceive(void);                                           // Check for received data
     INT8U checkError(void);                                             // Check for errors
     INT8U getError(void);                                               // Check for errors

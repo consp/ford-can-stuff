@@ -3,9 +3,9 @@ set (UPLOAD avrdude)
 set (PROGRAMMER usbasp)
 
 set (MCU atmega1284p)
-set (E_FUSE 0xF8)
-set (H_FUSE 0x17)
-set (L_FUSE 0xF7)
+set (E_FUSE 0xFF)
+set (H_FUSE 0xD9)
+set (L_FUSE 0xFC)
 set (MCU_SPEED 16000000)
 
 
@@ -27,6 +27,7 @@ add_definitions ("-funsigned-bitfields")
 add_definitions ("-ffunction-sections")
 add_definitions ("-c")
 add_definitions ("-O3")
+add_definitions ("-g")
 add_definitions ("-ffunction-sections -fdata-sections -MMD")
 add_definitions ("-DUSB_VID=null -DUSB_PID=null -DARDUINO=106")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
@@ -51,6 +52,10 @@ set (SOURCE
 		src/fiesta_can.cpp
 		src/canmsg.cpp
 	)
+
+set (CRC8_SOURCE 
+        src/crc8.cpp
+    )
 
 set (MCP2515_CAN_SOURCE
 		src/mcp2515/mcp_can.cpp
@@ -84,15 +89,17 @@ list (TRANSFORM MIGHTY_CORE_SOURCE PREPEND ${MIGHTY_CORE_SOURCE_DIR})
 add_library (mcp2515can STATIC ${MCP2515_CAN_SOURCE})
 add_library (arduino STATIC ${ARDUINO_CORE_SOURCE})
 add_library (mightycore STATIC ${MIGHTY_CORE_SOURCE})
+add_library (crc8 STATIC ${CRC8_SOURCE})
 
 add_executable (fiesta_can.elf ${SOURCE})
 
 set_target_properties (arduino PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
 set_target_properties (mightycore PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
 set_target_properties (mcp2515can PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
+set_target_properties (crc8 PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
 set_target_properties (fiesta_can.elf PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
 target_link_libraries (mcp2515can arduino mightycore)
-target_link_libraries (fiesta_can.elf mcp2515can arduino mightycore)
+target_link_libraries (fiesta_can.elf mcp2515can arduino mightycore crc8)
 
 add_custom_command (
 		OUTPUT rom.eep
@@ -120,7 +127,14 @@ add_custom_target(
 add_custom_target(
 	fuses
 		COMMAND
-        ${AVRDUDE} -c usbasp -p ${MCU} -B 5 -U lfuse:w:${L_FUSE}:m =U hfuse:w:${H_FUSE}:m -U efuse:w:${E_FUSE}:m
+        ${AVRDUDE} -c usbasp -p ${MCU} -B 5 -U lfuse:w:${L_FUSE}:m -U hfuse:w:${H_FUSE}:m -U efuse:w:${E_FUSE}:m
 	    DEPENDS rom.hex
 		COMMENT "Uploading rom to ${MCU}"
    )
+
+add_custom_target(
+    reset
+        COMMAND
+        ${AVRDUDE} -p ${MCU} -c usbasp -B 5  -U lfuse:v:${L_FUSE}:m -U hfuse:v:${H_FUSE}:m -U efuse:v:${E_FUSE}:m
+        COMMENT "Resetting ${MCU}"
+    )
