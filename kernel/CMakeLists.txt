@@ -23,7 +23,8 @@ include_directories(
 )
 
 set(DRIVER_FILE slcan_multimode.ko)
-set(KBUILD_CMD $(MAKE) -C ${KERNELHEADERS_DIR} M=${CMAKE_CURRENT_BINARY_DIR} src=${CMAKE_CURRENT_SOURCE_DIR} modules )
+set(KBUILD_CMD $(MAKE) -C ${KERNELHEADERS_DIR} M=${CMAKE_CURRENT_BINARY_DIR} src=${CMAKE_CURRENT_SOURCE_DIR} modules KBUILD_VERBOSE=1)
+set(KBUILD_CLEAN $(MAKE) -C ${KERNELHEADERS_DIR} M=${CMAKE_CURRENT_BINARY_DIR} src=${CMAKE_CURRENT_SOURCE_DIR} clean )
 
 FILE(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/Kbuild "obj-m := slcan_multimode.o")
 message(STATUS "Source dir ${CMAKE_CURRENT_SOURCE_DIR}")
@@ -34,8 +35,21 @@ add_custom_command(OUTPUT ${DRIVER_FILE}
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         DEPENDS slcan_multimode.c VERBATIM)
 
+add_custom_target(mod_symvers
+    COMMAND cp /usr/src/linux-headers-`uname -r`/Module.symvers ${CMAKE_CURRENT_BINARY_DIR}/
+    )
     
-add_custom_target(slcan_multimode ALL DEPENDS ${DRIVER_FILE})
+add_custom_target(slcan_multimode ALL DEPENDS ${DRIVER_FILE} mod_symvers)
 #add_library(dummy_target slcan_multimode.c)
 
 
+add_custom_target(install_kmod
+    COMMAND cp ${CMAKE_CURRENT_BINARY_DIR}/slcan_multimode.ko /lib/modules/`uname -r`/kernel/drivers/net/can/
+    COMMAND depmod
+    COMMENT "Installing kmod"
+    )
+
+add_custom_target(clean_kmod
+    COMMAND ${KBUILD_CLEAN}
+    COMMENT "Cleaning kmod"
+    )

@@ -108,7 +108,7 @@ struct slcan {
 	/* These are pointers to the malloc()ed frame buffers. */
 	unsigned char		rbuff[SLC_MTU];	/* receiver buffer	     */
 	int			        rcount;         /* received chars counter    */
-	unsigned char		xbuff[SLC_MTU];	/* transmitter buffer	     */
+	unsigned char		xbuff[SLC_MTU+1];	/* transmitter buffer	     */
 	unsigned char		*xhead;         /* pointer to next XMIT byte */
 	int			        xleft;          /* bytes left in XMIT queue  */
 
@@ -267,7 +267,7 @@ static void slc_bump(struct slcan *sl)
             return;
         }
 
-        pr_info("slcan mm: received bus %d type %c\n", bus, *cmd);
+        pr_debug("slcan mm: received bus %d type %c\n", bus, *cmd);
         switch (*cmd) {
             case 'r':
                 cf.can_id = CAN_RTR_FLAG;
@@ -339,9 +339,9 @@ static void slc_bump(struct slcan *sl)
         }
     } else {
         // binary mode
-        pr_info("binary copy");
+        pr_debug("binary copy");
         memcpy(&slb, sl->rbuff, SLC_B_MTU);
-        pr_info("rawid: %02X%02X%02X%02X", (slb.id & 0xFF000000) >> 24, (slb.id & 0x00FF0000) >> 16, (slb.id & 0x0000FF00) >>  8, (slb.id & 0x000000FF));
+        pr_debug("rawid: %02X%02X%02X%02X", (slb.id & 0xFF000000) >> 24, (slb.id & 0x00FF0000) >> 16, (slb.id & 0x0000FF00) >>  8, (slb.id & 0x000000FF));
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
         cf.can_dlc = slb.len;
@@ -356,7 +356,7 @@ static void slc_bump(struct slcan *sl)
             pr_err("Can frame has more tha 8 bytes: %d %08X", slb.len, slb.len);
             slb.len = 8;
         }
-        pr_info("b %d", bus);
+        pr_debug("b %d", bus);
         memcpy(cf.data, slb.data, slb.len);
     }
 
@@ -448,13 +448,19 @@ static void slc_encaps(struct slcan *sl, struct can_frame *cf, struct net_device
 	unsigned char *endpos;
 	canid_t id = cf->can_id;
 
+    pr_info("encaps start");
 	pos = sl->xbuff;
+
+    pr_info("Bus %d", sl->active);
+    *pos++ = 'B';
+    *pos++ = '0' + sl->active;
 
 	if (cf->can_id & CAN_RTR_FLAG)
 		*pos = 'R'; /* becomes 'r' in standard frame format (SFF) */
 	else
 		*pos = 'T'; /* becomes 't' in standard frame format (SSF) */
 
+    pr_info("encaps id");
 	/* determine number of chars for the CAN-identifier */
 	if (cf->can_id & CAN_EFF_FLAG) {
 		id &= CAN_EFF_MASK;
@@ -474,6 +480,7 @@ static void slc_encaps(struct slcan *sl, struct can_frame *cf, struct net_device
 
 	pos += (cf->can_id & CAN_EFF_FLAG) ? SLC_EFF_ID_LEN : SLC_SFF_ID_LEN;
 
+    pr_info("encaps len");
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
 	*pos++ = cf->can_dlc + '0';
 #else
@@ -483,14 +490,16 @@ static void slc_encaps(struct slcan *sl, struct can_frame *cf, struct net_device
 	/* RTR frames may have a dlc > 0 but they never have any data bytes */
 	if (!(cf->can_id & CAN_RTR_FLAG)) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
-		for (i = 0; i < cf->can_dlc; i++)
+		for (i = 0; i < cf->can_dlc && i < 8; i++)
 #else
-		for (i = 0; i < cf->len; i++)
+		for (i = 0; i < cf->len && i < 8; i++)
 #endif
 			pos = hex_byte_pack_upper(pos, cf->data[i]);
 	}
 
+    pr_info("encaps end");
 	*pos++ = '\r';
+    *pos = '\0';
 
 	/* Order of next two lines is *very* important.
 	 * When we are sending a little amount of data,
@@ -500,7 +509,14 @@ static void slc_encaps(struct slcan *sl, struct can_frame *cf, struct net_device
 	 * if we did not request it before write operation.
 	 *       14 Oct 1994  Dmitry Gorodchanin.
 	 */
+    pr_info("Encoded in xmit buffer, setting write wakeup");
+    pr_info("sending data");
+    pr_info("SLC Message: %s", sl->xbuff);
 	set_bit(TTY_DO_WRITE_WAKEUP, &sl->tty->flags);
+    if (NULL == sl->tty || NULL == sl->tty->ops || NULL == sl->tty->ops->write) {
+        pr_info("Massive fail");
+        return;
+    }
 	actual = sl->tty->ops->write(sl->tty, sl->xbuff, pos - sl->xbuff);
 	sl->xleft = (pos - sl->xbuff) - actual;
 	sl->xhead = sl->xbuff + actual;
@@ -577,8 +593,9 @@ static void slcan_transmit(struct work_struct *work)
 	struct slcan *sl = container_of(work, struct slcan, tx_work);
 	int actual;
 
+    pr_info("slcan mm: waiting for lock");
 	spin_lock_bh(&sl->lock);
-
+    pr_info("slcan mm: sending");
     for (i = 0; i < sl->devcount; i++) netdevrun |= netif_running(sl->dev[i]);
 
 	/* First make sure we're connected. */
@@ -603,7 +620,7 @@ static void slcan_transmit(struct work_struct *work)
 	sl->xleft -= actual;
 	sl->xhead += actual;
 	spin_unlock_bh(&sl->lock);
-    pr_info("slcan mm: Transmitted data to tty\n");
+    pr_debug("slcan mm: Transmitted partial data to tty\n");
 }
 
 /*
@@ -626,8 +643,16 @@ static netdev_tx_t slc_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct slcan_bus *bus = netdev_priv(dev);
 
-	if (skb->len != CAN_MTU)
+    pr_info("Net send");
+	if (skb->len != CAN_MTU) {
+        pr_info("wrong mtu");
 		goto out;
+    }
+
+    if (bus->sl == NULL) {
+        pr_info("Null sl struct");
+        goto out;
+    }
 
 	spin_lock(&bus->sl->lock);
 	if (!netif_running(dev))  {
@@ -635,17 +660,21 @@ static netdev_tx_t slc_xmit(struct sk_buff *skb, struct net_device *dev)
 		printk(KERN_WARNING "%s: xmit: iface is down\n", dev->name);
 		goto out;
 	}
+    pr_info("Netdev running");
 	if (bus->sl->tty == NULL) {
 		spin_unlock(&bus->sl->lock);
 		goto out;
 	}
-	netif_stop_queue(bus->dev);
+	netif_stop_queue(dev);
     bus->sl->active = bus->id;
-	slc_encaps(bus->sl, (struct can_frame *) skb->data, dev); /* encaps & send */
+    pr_info("Encapsulating data");
+	slc_encaps(bus->sl, (struct can_frame *) skb->data, dev);
 	spin_unlock(&bus->sl->lock);
+    pr_info("Unlocked");
 
 out:
 	kfree_skb(skb);
+    pr_info("freed");
 	return NETDEV_TX_OK;
 }
 
@@ -812,7 +841,7 @@ static struct slcan *slc_alloc(void)
     struct slcan_bus    *bus;
 	int size;
 
-    pr_info("slcan mm: allocating new busses\n");
+    pr_debug("slcan mm: allocating new busses\n");
 	for (i = 0; i < maxdev; i++) {
 		sl = slcan_devs[i];
 		if (sl == NULL)
@@ -899,7 +928,7 @@ static int slcan_open(struct tty_struct *tty)
 	if (tty->ops->write == NULL)
 		return -EOPNOTSUPP;
 
-	pr_info("slcan mm: opening busses\n");
+	pr_debug("slcan mm: opening busses\n");
 	/* RTnetlink lock is misused here to serialize concurrent
 	   opens of slcan channels. There are better ways, but it is
 	   the simplest one.
@@ -982,12 +1011,12 @@ static void slcan_close(struct tty_struct *tty)
 	if (!sl || sl->magic != SLCAN_MAGIC || sl->tty != tty)
 		return;
 
-    pr_info("slcan mm: closing netdevices\n");
+    pr_debug("slcan mm: closing netdevices\n");
 	/* Flush network side */
 	for (i = 0; i < sl->devcount; i++) unregister_netdev(sl->dev[i]);
 	/* This will complete via sl_free_netdev */
 
-    pr_info("slcan mm: closing tty");
+    pr_debug("slcan mm: closing tty");
 	spin_lock_bh(&sl->lock);
 	rcu_assign_pointer(tty->disc_data, NULL);
 	sl->tty = NULL;
@@ -1041,7 +1070,7 @@ static int slcan_ioctl(struct tty_struct *tty, struct file *file,
             }
             buffer[tmp2-1] = '\0';
 
-            pr_info("Found %s netdevices\n", buffer);
+            pr_debug("Found %s netdevices\n", buffer);
             if (copy_to_user((void __user *)arg, buffer, tmp2 - 1)) {
                 kfree(buffer);
                 return -EFAULT;
@@ -1166,7 +1195,7 @@ static void __exit slcan_exit(void)
 		dev = slcan_net[i];
 		if (!dev)
 			continue;
-        pr_info("slcan mm: closing %8s\n", dev->name);
+        pr_debug("slcan mm: closing %8s\n", dev->name);
 		slcan_net[i] = NULL;
 
 		bus = netdev_priv(dev);
@@ -1178,7 +1207,7 @@ static void __exit slcan_exit(void)
     kfree(slcan_devs);
 	slcan_net = NULL;
 
-    pr_info("slcan mm: unregistering ldisc\n");
+    pr_debug("slcan mm: unregistering ldisc\n");
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,16,0)
 	tty_unregister_ldisc(N_SLCAN);
 #else

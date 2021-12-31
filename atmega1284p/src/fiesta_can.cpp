@@ -547,7 +547,7 @@ void slcan() {
             Serial.flush();
             response_length = 0;
         }
-    } while(slcan_buffer_length > 0);
+    } while(slcan_buffer_length > 0 && available);
 }
 
 unsigned long ms = 0, time_apim = 0, slcounter = 0;
@@ -561,7 +561,7 @@ void setup() {
     //disablePower(POWER_TIMER2);
     //disablePower(POWER_TIMER1);
 
-    Serial.begin(1000000);
+    Serial.begin(2000000);
 
     // setup pins
     ISR_SETUP();
