@@ -44,4 +44,7 @@ Or collect the git submodules and run the batch file to create the softlinks.
 Run `mkdir -p build; cd build; cmake ..`
 
 ## Compile the kernel module
-Same as above but then `make kernel`
+Same as above but then `make slcan_multimode` and install with `make install_kmod`
+
+## Known issues
+- There is some memoy issue which causes the device to reset on receiving data and timing out afterwards.
