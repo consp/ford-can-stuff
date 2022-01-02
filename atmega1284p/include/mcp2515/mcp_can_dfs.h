@@ -24,17 +24,11 @@
 #ifndef _MCP2515DFS_H_
 #define _MCP2515DFS_H_
 
+#ifdef ARDUINO_SERIAL
 #include <Arduino.h>
 #include <SPI.h>
+#endif
 #include <inttypes.h>
-
-#ifndef INT32U
-#define INT32U unsigned long
-#endif
-
-#ifndef INT8U
-#define INT8U byte
-#endif
 
 // if print debug information
 #define DEBUG_MODE 1

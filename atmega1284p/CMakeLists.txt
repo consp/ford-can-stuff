@@ -28,11 +28,13 @@ add_definitions ("-ffunction-sections")
 add_definitions ("-c")
 add_definitions ("-O3")
 add_definitions ("-g")
+add_definitions ("-DSERIAL_TX_BUFFER_SIZE=256")
+add_definitions ("-DSERIAL_RX_BUFFER_SIZE=256")
 add_definitions ("-ffunction-sections -fdata-sections -MMD")
 add_definitions ("-DUSB_VID=null -DUSB_PID=null -DARDUINO=106")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-include_directories (include/ cores/ libraries/SPI/src/ libraries/Wire/src/ libraries/EEPROM/src/ board/)
+include_directories (include/ cores/ libraries/SPI/src/ libraries/Wire/src/ libraries/EEPROM/src/ board/ libraries/uart/include)
 
 find_program (AVR_CC avr-gcc REQUIRED)
 find_program (AVR_CXX avr-g++ REQUIRED)
@@ -61,6 +63,10 @@ set (MCP2515_CAN_SOURCE
 		src/mcp2515/mcp_can.cpp
 	)
 
+set (UART_SOURCE
+        libraries/uart/usart.c
+        )
+
 set (ARDUINO_CORE_SOURCE
 		WInterrupts.c
 		wiring.c
@@ -68,15 +74,16 @@ set (ARDUINO_CORE_SOURCE
 		wiring_digital.c
 		wiring_pulse.c
 		wiring_shift.c
-		HardwareSerial.cpp
-		HardwareSerial0.cpp
-		HardwareSerial1.cpp
 		Stream.cpp
 		hooks.c
 		new.cpp
 		Print.cpp
 		main.cpp
 	)
+# HardwareSerial.cpp
+#		HardwareSerial0.cpp
+#		HardwareSerial1.cpp
+
 set (ARDUINO_CORE_SOURCE_DIR "cores/")
 list (TRANSFORM ARDUINO_CORE_SOURCE PREPEND ${ARDUINO_CORE_SOURCE_DIR})
 
@@ -86,10 +93,11 @@ set (MIGHTY_CORE_SOURCE
 set (MIGHTY_CORE_SOURCE_DIR "libraries/")
 list (TRANSFORM MIGHTY_CORE_SOURCE PREPEND ${MIGHTY_CORE_SOURCE_DIR})
 
-add_library (mcp2515can STATIC ${MCP2515_CAN_SOURCE})
-add_library (arduino STATIC ${ARDUINO_CORE_SOURCE})
-add_library (mightycore STATIC ${MIGHTY_CORE_SOURCE})
-add_library (crc8 STATIC ${CRC8_SOURCE})
+add_library(mcp2515can STATIC ${MCP2515_CAN_SOURCE})
+add_library(arduino STATIC ${ARDUINO_CORE_SOURCE})
+add_library(mightycore STATIC ${MIGHTY_CORE_SOURCE})
+add_library(crc8 STATIC ${CRC8_SOURCE})
+add_library(uart STATIC ${UART_SOURCE})
 
 add_executable (fiesta_can.elf ${SOURCE})
 
@@ -97,9 +105,10 @@ set_target_properties (arduino PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FL
 set_target_properties (mightycore PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
 set_target_properties (mcp2515can PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
 set_target_properties (crc8 PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
+set_target_properties (uart PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
 set_target_properties (fiesta_can.elf PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
-target_link_libraries (mcp2515can arduino mightycore)
-target_link_libraries (fiesta_can.elf mcp2515can arduino mightycore crc8)
+target_link_libraries (mcp2515can)
+target_link_libraries (fiesta_can.elf mcp2515can crc8 uart)
 
 add_custom_command (
 		OUTPUT rom.eep

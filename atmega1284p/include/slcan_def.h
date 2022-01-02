@@ -52,7 +52,7 @@
 #define SLCAN_MODE_BASIC    16
 #define SLCAN_MODE_BINARY   32
 
-#define SLCAN_MSG_LEN 32
+#define SLCAN_MSG_LEN 128
 
 #define SLCAN_BINARY_PREAMBLE 0xA5
 

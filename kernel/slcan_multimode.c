@@ -70,6 +70,7 @@ static int maxdev = 1;		/*  MAX number of SLCAN channels;
 				                insmod slcan_multimode.ko maxdev=nnn	*/
 static int maxbus = 3;
 static int binary_mode = 0;
+uint8_t debugbuffer[128];
 module_param(maxdev, int, 0);
 module_param(maxbus, int, 0);
 module_param(binary_mode, int, 0);
@@ -120,6 +121,8 @@ struct slcan {
 #define gBUS(idfield) ((idfield & 0xC0000000) >> 30)
 #define gRTR(idfield) ((idfield & 0x20000000) >> 29)
 #define gID(idfield) (idfield & 0x1FFFFFFF)
+
+#define IDFIELD(bus, rtr, id)  ((id & 0x1FFFFFFF) | (0x20000000 & (rtr << 29)) | (0xC0000000 & (bus << 30)))
 
 struct slcan_bus {
 	struct net_device	*dev;		/* note: single device    */
@@ -247,7 +250,7 @@ static void slc_bump(struct slcan *sl)
     struct slcan_binary slb;
 
 	memset(&cf, 0, sizeof(cf));
-
+    pr_info("msg");
     if (!binary_mode) {
 
         switch (*cmd) {
@@ -446,60 +449,83 @@ static void slc_encaps(struct slcan *sl, struct can_frame *cf, struct net_device
 	int actual, i;
 	unsigned char *pos;
 	unsigned char *endpos;
+    struct slcan_binary slb;
+    uint8_t *slbp;
 	canid_t id = cf->can_id;
 
-    pr_info("encaps start");
+    pr_debug("encaps start");
 	pos = sl->xbuff;
 
-    pr_info("Bus %d", sl->active);
-    *pos++ = 'B';
-    *pos++ = '0' + sl->active;
+    if (!binary_mode) {
+        pr_debug("Bus %d", sl->active);
+        *pos++ = 'B';
+        *pos++ = '0' + sl->active;
 
-	if (cf->can_id & CAN_RTR_FLAG)
-		*pos = 'R'; /* becomes 'r' in standard frame format (SFF) */
-	else
-		*pos = 'T'; /* becomes 't' in standard frame format (SSF) */
+        if (cf->can_id & CAN_RTR_FLAG)
+            *pos = 'R'; /* becomes 'r' in standard frame format (SFF) */
+        else
+            *pos = 'T'; /* becomes 't' in standard frame format (SSF) */
 
-    pr_info("encaps id");
-	/* determine number of chars for the CAN-identifier */
-	if (cf->can_id & CAN_EFF_FLAG) {
-		id &= CAN_EFF_MASK;
-		endpos = pos + SLC_EFF_ID_LEN;
-	} else {
-		*pos |= 0x20; /* convert R/T to lower case for SFF */
-		id &= CAN_SFF_MASK;
-		endpos = pos + SLC_SFF_ID_LEN;
-	}
+        pr_debug("encaps id");
+        /* determine number of chars for the CAN-identifier */
+        if (cf->can_id & CAN_EFF_FLAG) {
+            id &= CAN_EFF_MASK;
+            endpos = pos + SLC_EFF_ID_LEN;
+        } else {
+            *pos |= 0x20; /* convert R/T to lower case for SFF */
+            id &= CAN_SFF_MASK;
+            endpos = pos + SLC_SFF_ID_LEN;
+        }
 
-	/* build 3 (SFF) or 8 (EFF) digit CAN identifier */
-	pos++;
-	while (endpos >= pos) {
-		*endpos-- = hex_asc_upper[id & 0xf];
-		id >>= 4;
-	}
+        /* build 3 (SFF) or 8 (EFF) digit CAN identifier */
+        pos++;
+        while (endpos >= pos) {
+            *endpos-- = hex_asc_upper[id & 0xf];
+            id >>= 4;
+        }
 
-	pos += (cf->can_id & CAN_EFF_FLAG) ? SLC_EFF_ID_LEN : SLC_SFF_ID_LEN;
+        pos += (cf->can_id & CAN_EFF_FLAG) ? SLC_EFF_ID_LEN : SLC_SFF_ID_LEN;
 
-    pr_info("encaps len");
+        pr_debug("encaps len");
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
-	*pos++ = cf->can_dlc + '0';
+        *pos++ = cf->can_dlc + '0';
 #else
-	*pos++ = cf->len + '0';
+        *pos++ = cf->len + '0';
 #endif
 
-	/* RTR frames may have a dlc > 0 but they never have any data bytes */
-	if (!(cf->can_id & CAN_RTR_FLAG)) {
+        /* RTR frames may have a dlc > 0 but they never have any data bytes */
+        if (!(cf->can_id & CAN_RTR_FLAG)) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
-		for (i = 0; i < cf->can_dlc && i < 8; i++)
+            for (i = 0; i < cf->can_dlc && i < 8; i++)
 #else
-		for (i = 0; i < cf->len && i < 8; i++)
+            for (i = 0; i < cf->len && i < 8; i++)
 #endif
-			pos = hex_byte_pack_upper(pos, cf->data[i]);
-	}
+                pos = hex_byte_pack_upper(pos, cf->data[i]);
+        }
 
-    pr_info("encaps end");
-	*pos++ = '\r';
-    *pos = '\0';
+        pr_debug("encaps end");
+        *pos++ = '\r';
+        *pos = '\0';
+    } else {
+        // binary_mode
+        slb.preamble = 0xA5;
+        slb.id = IDFIELD(sl->active, cf->can_id & CAN_RTR_FLAG ? 1 : 0, cf->can_id);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
+        slb.len = cf->can_dlc;
+#else
+        slb.len = cf->len;
+#endif
+        memcpy(slb.data, cf->data, slb.len);
+        slbp = (uint8_t *) &slb;
+        slb.crc = crc8(slbp, SLC_B_MTU - 1);
+        memcpy(pos, slbp, SLC_B_MTU);
+        pos += SLC_B_MTU; 
+
+        for (i = 0; i < SLC_B_MTU; i++) {
+            sprintf(&debugbuffer[i*2], "%02X", sl->xbuff[i]);
+        }
+        pr_info("SLC Msg binary: %s", debugbuffer);
+    }
 
 	/* Order of next two lines is *very* important.
 	 * When we are sending a little amount of data,
@@ -509,12 +535,13 @@ static void slc_encaps(struct slcan *sl, struct can_frame *cf, struct net_device
 	 * if we did not request it before write operation.
 	 *       14 Oct 1994  Dmitry Gorodchanin.
 	 */
-    pr_info("Encoded in xmit buffer, setting write wakeup");
-    pr_info("sending data");
-    pr_info("SLC Message: %s", sl->xbuff);
+    pr_debug("Encoded in xmit buffer, setting write wakeup");
+    pr_debug("sending data");
+
+//    pr_info("SLC Message: %s", sl->xbuff);
 	set_bit(TTY_DO_WRITE_WAKEUP, &sl->tty->flags);
     if (NULL == sl->tty || NULL == sl->tty->ops || NULL == sl->tty->ops->write) {
-        pr_info("Massive fail");
+        pr_info("no tty present");
         return;
     }
 	actual = sl->tty->ops->write(sl->tty, sl->xbuff, pos - sl->xbuff);
@@ -593,9 +620,9 @@ static void slcan_transmit(struct work_struct *work)
 	struct slcan *sl = container_of(work, struct slcan, tx_work);
 	int actual;
 
-    pr_info("slcan mm: waiting for lock");
+    pr_debug("slcan mm: waiting for lock");
 	spin_lock_bh(&sl->lock);
-    pr_info("slcan mm: sending");
+    pr_debug("slcan mm: sending");
     for (i = 0; i < sl->devcount; i++) netdevrun |= netif_running(sl->dev[i]);
 
 	/* First make sure we're connected. */
@@ -612,7 +639,7 @@ static void slcan_transmit(struct work_struct *work)
 		clear_bit(TTY_DO_WRITE_WAKEUP, &sl->tty->flags);
 		spin_unlock_bh(&sl->lock);
         netif_wake_queue(sl->dev[sl->active]);
-        pr_info("slcan mm: Waking up netqueue\n");
+        pr_debug("slcan mm: Waking up netqueue\n");
 		return;
 	}
 
@@ -643,14 +670,14 @@ static netdev_tx_t slc_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct slcan_bus *bus = netdev_priv(dev);
 
-    pr_info("Net send");
+    pr_debug("Net send");
 	if (skb->len != CAN_MTU) {
-        pr_info("wrong mtu");
+        pr_info("wrong mtu: %d", skb->len);
 		goto out;
     }
 
     if (bus->sl == NULL) {
-        pr_info("Null sl struct");
+        pr_info("slcan not initialized properly");
         goto out;
     }
 
@@ -660,21 +687,21 @@ static netdev_tx_t slc_xmit(struct sk_buff *skb, struct net_device *dev)
 		printk(KERN_WARNING "%s: xmit: iface is down\n", dev->name);
 		goto out;
 	}
-    pr_info("Netdev running");
+    pr_debug("Netdev running");
 	if (bus->sl->tty == NULL) {
 		spin_unlock(&bus->sl->lock);
 		goto out;
 	}
 	netif_stop_queue(dev);
     bus->sl->active = bus->id;
-    pr_info("Encapsulating data");
+    pr_debug("Encapsulating data");
 	slc_encaps(bus->sl, (struct can_frame *) skb->data, dev);
 	spin_unlock(&bus->sl->lock);
-    pr_info("Unlocked");
+    pr_debug("Unlocked");
 
 out:
 	kfree_skb(skb);
-    pr_info("freed");
+    pr_debug("freed");
 	return NETDEV_TX_OK;
 }
 

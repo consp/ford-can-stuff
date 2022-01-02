@@ -31,15 +31,15 @@ class MCP_CAN
 {
     private:
     
-    INT8U   m_nExtFlg;                                                  // Identifier Type
+    uint8_t   m_nExtFlg;                                                  // Identifier Type
                                                                         // Extended (29 bit) or Standard (11 bit)
-    INT32U  m_nID;                                                      // CAN ID
-    INT8U   m_nDlc;                                                     // Data Length Code
-    INT8U   m_nDta[MAX_CHAR_IN_MESSAGE];                                // Data array
-    INT8U   m_nRtr;                                                     // Remote request flag
-    INT8U   m_nfilhit;                                                  // The number of the filter that matched the message
-    INT8U   MCPCS;                                                      // Chip Select pin number
-    INT8U   mcpMode;                                                    // Mode to return to after configurations are performed.
+    uint32_t  m_nID;                                                      // CAN ID
+    uint8_t   m_nDlc;                                                     // Data Length Code
+    uint8_t   m_nDta[MAX_CHAR_IN_MESSAGE];                                // Data array
+    uint8_t   m_nRtr;                                                     // Remote request flag
+    uint8_t   m_nfilhit;                                                  // The number of the filter that matched the message
+    uint8_t   MCPCS;                                                      // Chip Select pin number
+    uint8_t   mcpMode;                                                    // Mode to return to after configurations are performed.
    
 /*********************************************************************************************************
  *  mcp2515 driver function 
@@ -49,87 +49,87 @@ class MCP_CAN
 
     void mcp2515_reset(void);                                           // Soft Reset MCP2515
 
-    INT8U mcp2515_readRegister(const INT8U address);                    // Read MCP2515 register
+    uint8_t mcp2515_readRegister(const uint8_t address);                    // Read MCP2515 register
     
-    void mcp2515_readRegisterS(const INT8U address,                     // Read MCP2515 successive registers
-                                     INT8U values[], 
-                               const INT8U n);
+    void mcp2515_readRegisterS(const uint8_t address,                     // Read MCP2515 successive registers
+                                     uint8_t values[], 
+                               const uint8_t n);
 
-    void mcp2515_setRegister(const INT8U address,                       // Set MCP2515 register
-                             const INT8U value);
+    void mcp2515_setRegister(const uint8_t address,                       // Set MCP2515 register
+                             const uint8_t value);
 
-    void mcp2515_setRegisterS(const INT8U address,                      // Set MCP2515 successive registers
-                              INT8U values[],
-                              const INT8U n);
+    void mcp2515_setRegisterS(const uint8_t address,                      // Set MCP2515 successive registers
+                              uint8_t values[],
+                              const uint8_t n);
 
     void mcp2515_initCANBuffers(void);
 
-    void mcp2515_modifyRegister(const INT8U address,                    // Set specific bit(s) of a register
-                                const INT8U mask,
-                                const INT8U data);
+    void mcp2515_modifyRegister(const uint8_t address,                    // Set specific bit(s) of a register
+                                const uint8_t mask,
+                                const uint8_t data);
 
-    INT8U mcp2515_readStatus(void);                                     // Read MCP2515 Status
-    INT8U mcp2515_setCANCTRL_Mode(const INT8U newmode);                 // Set mode
-    INT8U mcp2515_requestNewMode(const INT8U newmode);                  // Set mode
-    INT8U mcp2515_requestClkOut(const INT8U newmode); 			// Set new clkmode
-    INT8U mcp2515_configRate(const INT8U canSpeed,                      // Set baudrate
+    uint8_t mcp2515_readStatus(void);                                     // Read MCP2515 Status
+    uint8_t mcp2515_setCANCTRL_Mode(const uint8_t newmode);                 // Set mode
+    uint8_t mcp2515_requestNewMode(const uint8_t newmode);                  // Set mode
+    uint8_t mcp2515_requestClkOut(const uint8_t newmode); 			// Set new clkmode
+    uint8_t mcp2515_configRate(const uint8_t canSpeed,                      // Set baudrate
 
-                             const INT8U canClock);
+                             const uint8_t canClock);
                              
-    INT8U mcp2515_init(const INT8U canIDMode,                           // Initialize Controller
-                       const INT8U canSpeed,
-                       const INT8U canClock);
+    uint8_t mcp2515_init(const uint8_t canIDMode,                           // Initialize Controller
+                       const uint8_t canSpeed,
+                       const uint8_t canClock);
 
-    void mcp2515_write_mf( const INT8U mcp_addr,                        // Write CAN Mask or Filter
-                           const INT8U ext,
-                           const INT32U id );
+    void mcp2515_write_mf( const uint8_t mcp_addr,                        // Write CAN Mask or Filter
+                           const uint8_t ext,
+                           const uint32_t id );
 
-    void mcp2515_write_id( const INT8U mcp_addr,                        // Write CAN ID
-                           const INT8U ext,
-                           const INT32U id );
+    void mcp2515_write_id( const uint8_t mcp_addr,                        // Write CAN ID
+                           const uint8_t ext,
+                           const uint32_t id );
 
-    void mcp2515_read_id( const INT8U mcp_addr,                         // Read CAN ID
-      INT8U* ext,
-                                INT32U* id );
+    void mcp2515_read_id( const uint8_t mcp_addr,                         // Read CAN ID
+      uint8_t* ext,
+                                uint32_t* id );
 
-    void mcp2515_write_canMsg( const INT8U buffer_sidh_addr );          // Write CAN message
-    void mcp2515_read_canMsg( const INT8U buffer_sidh_addr);            // Read CAN message
-    INT8U mcp2515_getNextFreeTXBuf(INT8U *txbuf_n);                     // Find empty transmit buffer
+    void mcp2515_write_canMsg( const uint8_t buffer_sidh_addr );          // Write CAN message
+    void mcp2515_read_canMsg( const uint8_t buffer_sidh_addr);            // Read CAN message
+    uint8_t mcp2515_getNextFreeTXBuf(uint8_t *txbuf_n);                     // Find empty transmit buffer
 
 /*********************************************************************************************************
  *  CAN operator function
  *********************************************************************************************************/
 
-    INT8U setMsg(INT32U id, INT8U rtr, INT8U ext, INT8U len, INT8U *pData);        // Set message
-    INT8U clearMsg();                                                   // Clear all message to zero
-    INT8U readMsg();                                                    // Read message
-    INT8U sendMsg();                                                    // Send message
+    uint8_t setMsg(uint32_t id, uint8_t rtr, uint8_t ext, uint8_t len, uint8_t *pData);        // Set message
+    uint8_t clearMsg();                                                   // Clear all message to zero
+    uint8_t readMsg();                                                    // Read message
+    uint8_t sendMsg();                                                    // Send message
 
 public:
-    MCP_CAN(INT8U _CS);
-    INT8U begin(INT8U idmodeset, INT8U speedset, INT8U clockset);       // Initilize controller prameters
-    INT8U init_Mask(INT8U num, INT8U ext, INT32U ulData);               // Initilize Mask(s)
-    INT8U init_Mask(INT8U num, INT32U ulData);                          // Initilize Mask(s)
-    INT8U init_Filt(INT8U num, INT8U ext, INT32U ulData);               // Initilize Filter(s)
-    INT8U init_Filt(INT8U num, INT32U ulData);                          // Initilize Filter(s)
-    void setSleepWakeup(INT8U enable);                                  // Enable or disable the wake up interrupt (If disabled the MCP2515 will not be woken up by CAN bus activity)
-    INT8U setMode(INT8U opMode);                                        // Set operational mode
-    INT8U sendMsgBuf(INT32U id, INT8U ext, INT8U len, INT8U *buf);      // Send message to transmit buffer
-    INT8U sendMsgBuf(INT32U id, INT8U len, INT8U *buf);                 // Send message to transmit buffer
-    INT8U readMsgBuf(INT32U *id, INT8U *ext, INT8U *len, INT8U *buf);   // Read message from receive buffer
-    INT8U readMsgBuf(INT32U *id, INT8U *len, INT8U *buf);               // Read message from receive buffer
+    MCP_CAN(uint8_t _CS);
+    uint8_t begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset);       // Initilize controller prameters
+    uint8_t init_Mask(uint8_t num, uint8_t ext, uint32_t ulData);               // Initilize Mask(s)
+    uint8_t init_Mask(uint8_t num, uint32_t ulData);                          // Initilize Mask(s)
+    uint8_t init_Filt(uint8_t num, uint8_t ext, uint32_t ulData);               // Initilize Filter(s)
+    uint8_t init_Filt(uint8_t num, uint32_t ulData);                          // Initilize Filter(s)
+    void setSleepWakeup(uint8_t enable);                                  // Enable or disable the wake up interrupt (If disabled the MCP2515 will not be woken up by CAN bus activity)
+    uint8_t setMode(uint8_t opMode);                                        // Set operational mode
+    uint8_t sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, uint8_t *buf);      // Send message to transmit buffer
+    uint8_t sendMsgBuf(uint32_t id, uint8_t len, uint8_t *buf);                 // Send message to transmit buffer
+    uint8_t readMsgBuf(uint32_t *id, uint8_t *ext, uint8_t *len, uint8_t *buf);   // Read message from receive buffer
+    uint8_t readMsgBuf(uint32_t *id, uint8_t *len, uint8_t *buf);               // Read message from receive buffer
     void resetInt();
-    INT8U getInt(void);
-    INT8U checkReceive(void);                                           // Check for received data
-    INT8U checkError(void);                                             // Check for errors
-    INT8U getError(void);                                               // Check for errors
-    INT8U errorCountRX(void);                                           // Get error count
-    INT8U errorCountTX(void);                                           // Get error count
-    INT8U enOneShotTX(void);                                            // Enable one-shot transmission
-    INT8U disOneShotTX(void);                                           // Disable one-shot transmission
-    INT8U abortTX(void);                                                // Abort queued transmission(s)
-    INT8U setGPO(INT8U data);                                           // Sets GPO
-    INT8U getGPI(void);                                                 // Reads GPI
+    uint8_t getInt(void);
+    uint8_t checkReceive(void);                                           // Check for received data
+    uint8_t checkError(void);                                             // Check for errors
+    uint8_t getError(void);                                               // Check for errors
+    uint8_t errorCountRX(void);                                           // Get error count
+    uint8_t errorCountTX(void);                                           // Get error count
+    uint8_t enOneShotTX(void);                                            // Enable one-shot transmission
+    uint8_t disOneShotTX(void);                                           // Disable one-shot transmission
+    uint8_t abortTX(void);                                                // Abort queued transmission(s)
+    uint8_t setGPO(uint8_t data);                                           // Sets GPO
+    uint8_t getGPI(void);                                                 // Reads GPI
 };
 
 #endif
