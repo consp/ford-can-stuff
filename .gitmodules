@@ -4,3 +4,6 @@
 [submodule "submodules/mightycore"]
 	path = submodules/mightycore
 	url = https://github.com/MCUdude/MightyCore.git
+[submodule "submodules/uart_lib"]
+	path = submodules/uart_lib
+	url = https://github.com/jnk0le/AVR-UART-lib
