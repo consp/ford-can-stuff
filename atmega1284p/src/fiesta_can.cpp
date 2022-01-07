@@ -350,6 +350,8 @@ static inline void slcan(void) {
     if (slcan_buffer_length > 0 && command_end != 0) {
         current_can = NULL;
         start = 0;
+        error = 0;
+        bus = 255;
 
         // fast send, now with crc!
         if ((canmode & SLCAN_MODE_BINARY) && command_end == 15 && slcan_buffer[0] == SLCAN_BINARY_PREAMBLE) {
@@ -375,301 +377,298 @@ static inline void slcan(void) {
                 case 0x30:
                     current_can = &CAN0;
                     bus = 0;
+                    break;
                 default:
                     current_can = NULL;
                     bus = 255;
+                    error = 1;
+                    response[0] = SLCAN_ERROR;
+                    response_length = 1;
                     break;
             }
             start = 2;
         }
 
-        switch (slcan_buffer[start]) {
-            case SLCAN_CMD_SEND_MODE:
-                if (command_end < start + 2) {
-                    response[0] = SLCAN_ERROR;
-                    response_length = 1;
-                    error = 1;
-                } else {
-                    switch(slcan_buffer[start+1]) {
-                        case '1':
-                            canmode = (canmode & 0xCF) | SLCAN_MODE_BINARY;
-                            break;
-                        default:
-                        case '0':
-                            canmode = (canmode & 0xCF) | SLCAN_MODE_BASIC;
-                            break;
+        if (!error) {
+            switch (slcan_buffer[start]) {
+                case SLCAN_CMD_SEND_MODE:
+                    if (command_end < start + 2) {
+                        response[0] = SLCAN_ERROR;
+                        response_length = 1;
+                    } else {
+                        switch(slcan_buffer[start+1]) {
+                            case '1':
+                                canmode = (canmode & 0xCF) | SLCAN_MODE_BINARY;
+                                break;
+                            default:
+                            case '0':
+                                canmode = (canmode & 0xCF) | SLCAN_MODE_BASIC;
+                                break;
+                        }
+                        response[0] = SLCAN_OK;
+                        response_length = 1;
                     }
-                    response[0] = SLCAN_OK;
-                    response_length = 1;
-                }
-                break;
-            case SLCAN_CMD_SERIAL:
-                response[0] = SLCAN_CMD_SERIAL;
-                memcpy(&response[1], SLCAN_SERIAL, sizeof(SLCAN_SERIAL) - 1);
-                response[sizeof(SLCAN_SERIAL)] = SLCAN_OK;
-                response_length = sizeof(SLCAN_SERIAL) + 1;
-                break;
-            case SLCAN_CMD_VERSION:
-                response[0] = SLCAN_CMD_VERSION;
-                memcpy(&response[1], SLCAN_VERSION, sizeof(SLCAN_VERSION) - 1);
-                response[sizeof(SLCAN_VERSION)] = SLCAN_OK;
-                response_length = sizeof(SLCAN_VERSION) + 1;
-                break;
-            case SLCAN_CMD_UART_BAUD:
-                if (command_end < start + 2) {
-                    response[0] = SLCAN_ERROR;
-                    response_length = 1;
-                    error = 1;
-                } else {
-                    uint32_t newspeed = SLCAN_UART_1;
+                    break;
+                case SLCAN_CMD_SERIAL:
+                    response[0] = SLCAN_CMD_SERIAL;
+                    memcpy(&response[1], SLCAN_SERIAL, sizeof(SLCAN_SERIAL) - 1);
+                    response[sizeof(SLCAN_SERIAL)] = SLCAN_OK;
+                    response_length = sizeof(SLCAN_SERIAL) + 1;
+                    break;
+                case SLCAN_CMD_VERSION:
+                    response[0] = SLCAN_CMD_VERSION;
+                    memcpy(&response[1], SLCAN_VERSION, sizeof(SLCAN_VERSION) - 1);
+                    response[sizeof(SLCAN_VERSION)] = SLCAN_OK;
+                    response_length = sizeof(SLCAN_VERSION) + 1;
+                    break;
+                case SLCAN_CMD_UART_BAUD:
+                    if (command_end < start + 2) {
+                        response[0] = SLCAN_ERROR;
+                        response_length = 1;
+                    } else {
+                        uint32_t newspeed = SLCAN_UART_1;
+                        switch (slcan_buffer[start+1]) {
+                            case '0':
+                                newspeed = SLCAN_UART_0;
+                                break;
+                            case '1':
+                            default:
+                                newspeed = SLCAN_UART_1;
+                                break;
+                            case '2':
+                                newspeed = SLCAN_UART_2;
+                                break;
+                            case '3':
+                                newspeed = SLCAN_UART_3;
+                                break;
+                            case '4':
+                                newspeed = SLCAN_UART_4;
+                                break;
+                            case '5':
+                                newspeed = SLCAN_UART_5;
+                                break;
+                            case '6':
+                                newspeed = SLCAN_UART_6;
+                                break;
+                            case '7':
+                                newspeed = SLCAN_UART_7;
+                                break;
+                            case '8':
+                                newspeed = SLCAN_UART_8;
+                                break;
+                            case '9':
+                                newspeed = SLCAN_UART_9;
+                                break;
+                        }
+#ifdef ARDUINO_SERIAL
+                        Serial.end();
+                        Serial.begin(newspeed);
+#else
+                        uart_init(BAUD_CALC(newspeed));
+#endif
+                        response[0] = SLCAN_OK;
+                        response_length = 1;
+                    }
+                    break;
+
+
+                case SLCAN_CMD_RTR_EXT:
+                case SLCAN_CMD_TRANSMIT_EXT:
+                    if (slcan_buffer_length < 10) {
+                        response[0] = SLCAN_ERROR;
+                        response_length = 1;
+                        break;
+                    }
+                    ext = 1;
+                case SLCAN_CMD_RTR:
+                case SLCAN_CMD_TRANSMIT:
+                    if (slcan_buffer_length < 5) {
+                        response[0] = SLCAN_ERROR;
+                        response[1] = slcan_buffer_length;
+                        response_length = 2;
+                        break;
+                    }
+                    // set rtr
+                    if (slcan_buffer[start+0] == SLCAN_CMD_RTR || slcan_buffer[start+0] == SLCAN_CMD_RTR_EXT) rtr = 1;
+                    l = 0;
+
+                    // unhex data
+                    if (ext && ! rtr) {
+                        unhex(data, &slcan_buffer[start+1], 8);
+                        l = slcan_buffer[start+9] - '0';
+                        data[0] &= 0x3F; // strip port
+                        id = ((uint32_t) data[0]) << 24 | ((uint32_t) data[1]) << 16 | ((uint32_t) data[2] << 8) | ((uint32_t) data[3]);
+                        unhex(data, &slcan_buffer[start+10], command_end - 10);
+                    } else if (!rtr) {
+                        slcan_buffer[start] = '0';
+                        unhex(data, &slcan_buffer[start], 4);
+                        l = slcan_buffer[start+4] - '0';
+                        id = ((uint32_t) data[0] << 8) | ((uint32_t) data[1]);
+                        unhex(data, &slcan_buffer[start+5], command_end - 5);
+                    }
+
+                    if (l > 8 || id > 0x1FFFFFFF || bus > 2) {
+                        response[0] = SLCAN_ERROR;
+                        response_length = 1;
+                    } else {
+                        can_tx_put(bus, id, ext, rtr, l, data);
+                        response[0] = 'z' - (id > 0x7ff ? 0x20 : 0);
+                        response[1] = SLCAN_OK;
+                        response_length = 1;
+                    }
+
+    /*                    if (current_can != NULL) {
+                        current_can->sendMsgBuf(id, l, data);
+                    }*/
+
+                    break;
+                case SLCAN_CMD_BITRATE:
+                    if (slcan_buffer_length < 2) {
+                        response[0] = SLCAN_ERROR;
+                        response_length = 1;
+                        break;
+                    }
                     switch (slcan_buffer[start+1]) {
                         case '0':
-                            newspeed = SLCAN_UART_0;
+                            l = CAN_10KBPS;
+                            break;
+                        case '1':
+                            l = CAN_20KBPS;
+                            break;
+                        case '2':
+                            l = CAN_50KBPS;
+                            break;
+                        case '3':
+                            l = CAN_100KBPS;
+                            break;
+                        case '4':
+                            l = CAN_125KBPS;
+                            break;
+                        case '5':
+                            l = CAN_250KBPS;
+                            break;
+                        case '6':
+                            l = CAN_500KBPS;
+                            break;
+                        case '8':
+                            l = CAN_1000KBPS;
+                            break;
+                        case '7':
+                        default:
+                            l = 255;
+                            break;
+                    }
+                    if (l == 255) {
+                        response[0] = SLCAN_ERROR;
+                        response_length = 1;
+                    } else {
+                        uint8_t rv = 0;
+                        if (current_can == &CAN1 || current_can == &CAN0) {
+                            rv = current_can->begin(MCP_ANY, l, MCP_16MHZ | MCP_CLKOUT_ENABLE);
+                        } else if (current_can == &CAN2) {
+                            rv = current_can->begin(MCP_ANY, l, MCP_16MHZ);
+                        } else {
+                            rv = SLCAN_ERROR;
+                        }
+                        if (rv == CAN_OK) response[0] = SLCAN_OK;
+                        else response[0] = SLCAN_ERROR;
+                        response_length = 1;
+                    }
+
+                    break;
+                case SLCAN_CMD_OPEN_NORMAL:
+                    if (bus == 255) {
+                        i = 0; j = 2;
+                    } else {
+                        i = bus; j = bus;
+                    }
+                    for (; i <= j; i++) {
+                        slcan_mode[i] = SLCAN_MODE_OPEN;
+                    }
+                    // reset buffer
+                    can_rx_reset();
+                    response[0] = SLCAN_OK;
+                    response_length = 1;
+                    break;
+                case SLCAN_CMD_OPEN_LISTEN:
+                    if (bus == 255) {
+                        i = 0; j = 2;
+                    } else {
+                        i = bus; j = bus;
+                    }
+                    for (; i <= j; i++) {
+                        slcan_mode[i] = SLCAN_MODE_LISTEN;
+                    }
+                    // reset buffer
+                    can_rx_reset();
+                    response[0] = SLCAN_OK;
+                    response_length = 1;
+                    break;
+                case SLCAN_CMD_CLOSE:
+                    if (bus == 255) {
+                        i = 0; j = 2;
+                    } else {
+                        i = bus; j = bus;
+                    }
+                    for (; i <= j; i++) {
+                        slcan_mode[i] = SLCAN_MODE_CLOSED;
+                    }
+                    can_rx_reset();
+                    response[0] = SLCAN_OK;
+                    response_length = 1;
+                    break;
+                case SLCAN_CMD_STATUS_FLAGS:
+                    flags = 0x00;
+                    if (can_rx_full()) {
+                        flags |= 0x01;
+                    }
+                    if (can_tx_full()) {
+                        flags |= 0x02;
+                    }
+                    response[0] = 'F';
+                    sprintf((char *) &response[1], "%02X", flags);
+                    response[3] = SLCAN_OK;
+                    response_length = 4;
+                    break;
+                case SLCAN_CMD_ISR:
+                    response[0] = 'I';
+                    sprintf((char *) &response[1], "%02X", PCIFR);
+                    response[3] = SLCAN_OK;
+                    response_length = 4;
+                    break;
+                case SLCAN_CMD_TIMESTAMP:
+                    if (slcan_buffer_length < 3) {
+                        response[0] = SLCAN_ERROR;
+                        response_length = 1;
+                        break;
+                    }
+                    switch(slcan_buffer[start+1]) {
+                        case '0':
+                            canmode &= ~SLCAN_MODE_TIMESTAMP_ENABLED;
                             break;
                         case '1':
                         default:
-                            newspeed = SLCAN_UART_1;
-                            break;
-                        case '2':
-                            newspeed = SLCAN_UART_2;
-                            break;
-                        case '3':
-                            newspeed = SLCAN_UART_3;
-                            break;
-                        case '4':
-                            newspeed = SLCAN_UART_4;
-                            break;
-                        case '5':
-                            newspeed = SLCAN_UART_5;
-                            break;
-                        case '6':
-                            newspeed = SLCAN_UART_6;
-                            break;
-                        case '7':
-                            newspeed = SLCAN_UART_7;
-                            break;
-                        case '8':
-                            newspeed = SLCAN_UART_8;
-                            break;
-                        case '9':
-                            newspeed = SLCAN_UART_9;
+                            canmode |= SLCAN_MODE_TIMESTAMP_ENABLED;
                             break;
                     }
-#ifdef ARDUINO_SERIAL
-                    Serial.end();
-                    Serial.begin(newspeed);
-#else
-                    uart_init(BAUD_CALC(newspeed));
-#endif
                     response[0] = SLCAN_OK;
                     response_length = 1;
-                }
-                break;
-
-
-            case SLCAN_CMD_RTR_EXT:
-            case SLCAN_CMD_TRANSMIT_EXT:
-                if (slcan_buffer_length < 10) {
-                    response[0] = SLCAN_ERROR;
-                    response_length = 1;
-                    error = 1;
                     break;
-                }
-                ext = 1;
-            case SLCAN_CMD_RTR:
-            case SLCAN_CMD_TRANSMIT:
-                if (slcan_buffer_length < 5) {
+                // not implemented
+                case SLCAN_CMD_FILTER:
+                // not supported
+                case SLCAN_CMD_ACC_CODE:
+                case SLCAN_CMD_ACC_MASK:
+                case SLCAN_CMD_AUTO_POLL: // always enabled
+                case SLCAN_CMD_BITRATE_EXT:
+                case SLCAN_CMD_POLL_ALL:
+                case SLCAN_CMD_POLL:
+                default:
                     response[0] = SLCAN_ERROR;
-                    response[1] = slcan_buffer_length;
-                    response_length = 2;
-                    error = 1;
+                    response_length = 1;
                     break;
-                }
-                // set rtr
-                if (slcan_buffer[start+0] == SLCAN_CMD_RTR || slcan_buffer[start+0] == SLCAN_CMD_RTR_EXT) rtr = 1;
-                l = 0;
-
-                // unhex data
-                if (ext && ! rtr) {
-                    unhex(data, &slcan_buffer[start+1], 8);
-                    l = slcan_buffer[start+9] - '0';
-                    data[0] &= 0x3F; // strip port
-                    id = ((uint32_t) data[0]) << 24 | ((uint32_t) data[1]) << 16 | ((uint32_t) data[2] << 8) | ((uint32_t) data[3]);
-                    unhex(data, &slcan_buffer[start+10], command_end - 10);
-                } else if (!rtr) {
-                    slcan_buffer[start] = '0';
-                    unhex(data, &slcan_buffer[start], 4);
-                    l = slcan_buffer[start+4] - '0';
-                    id = ((uint32_t) data[0] << 8) | ((uint32_t) data[1]);
-                    unhex(data, &slcan_buffer[start+5], command_end - 5);
-                }
-
-                if (l > 8 || id > 0x1FFFFFFF || bus > 2) {
-                    response[0] = SLCAN_ERROR;
-                    response_length = 1;
-                } else {
-                    can_tx_put(bus, id, ext, rtr, l, data);
-                    response[0] = SLCAN_OK;
-                    response_length = 1;
-                }
-
-/*                    if (current_can != NULL) {
-                    current_can->sendMsgBuf(id, l, data);
-                }*/
-
-                break;
-            case SLCAN_CMD_BITRATE:
-                if (slcan_buffer_length < 2) {
-                    response[0] = SLCAN_ERROR;
-                    response_length = 1;
-                    error = 1;
-                    break;
-                }
-                switch (slcan_buffer[start+1]) {
-                    case '0':
-                        l = CAN_10KBPS;
-                        break;
-                    case '1':
-                        l = CAN_20KBPS;
-                        break;
-                    case '2':
-                        l = CAN_50KBPS;
-                        break;
-                    case '3':
-                        l = CAN_100KBPS;
-                        break;
-                    case '4':
-                        l = CAN_125KBPS;
-                        break;
-                    case '5':
-                        l = CAN_250KBPS;
-                        break;
-                    case '6':
-                        l = CAN_500KBPS;
-                        break;
-                    case '8':
-                        l = CAN_1000KBPS;
-                        break;
-                    case '7':
-                    default:
-                        l = 255;
-                        break;
-                }
-                if (l == 255) {
-                    response[0] = SLCAN_ERROR;
-                    response_length = 1;
-                } else {
-                    uint8_t rv = 0;
-                    if (current_can == &CAN1 || current_can == &CAN0) {
-                        rv = current_can->begin(MCP_ANY, l, MCP_16MHZ | MCP_CLKOUT_ENABLE);
-                    } else if (current_can == &CAN2) {
-                        rv = current_can->begin(MCP_ANY, l, MCP_16MHZ);
-                    } else {
-                        rv = SLCAN_ERROR;
-                    }
-                    if (rv == CAN_OK) response[0] = SLCAN_OK;
-                    else response[0] = SLCAN_ERROR;
-                    response_length = 1;
-                }
-                break;
-            case SLCAN_CMD_OPEN_NORMAL:
-                if (bus == 255) {
-                    i = 0; j = 2;
-                } else {
-                    i = bus; j = bus;
-                }
-                for (; i <= j; i++) {
-                    slcan_mode[i] = SLCAN_MODE_OPEN;
-                }
-                // reset buffer
-                can_rx_reset();
-                response[0] = SLCAN_CMD_OPEN_NORMAL;
-                response_length = 1;
-                break;
-            case SLCAN_CMD_OPEN_LISTEN:
-                if (bus == 255) {
-                    i = 0; j = 2;
-                } else {
-                    i = bus; j = bus;
-                }
-                for (; i <= j; i++) {
-                    slcan_mode[i] = SLCAN_MODE_LISTEN;
-                }
-                // reset buffer
-                can_rx_reset();
-                response[0] = SLCAN_CMD_OPEN_LISTEN;
-                response_length = 1;
-                break;
-            case SLCAN_CMD_CLOSE:
-                if (bus == 255) {
-                    i = 0; j = 2;
-                } else {
-                    i = bus; j = bus;
-                }
-                for (; i <= j; i++) {
-                    slcan_mode[i] = SLCAN_MODE_CLOSED;
-                }
-                can_rx_reset();
-                response[0] = SLCAN_CMD_CLOSE;
-                response_length = 1;
-                break;
-            case SLCAN_CMD_STATUS_FLAGS:
-                flags = 0x00;
-                if (can_rx_full()) {
-                    flags |= 0x01;
-                }
-                if (can_tx_full()) {
-                    flags |= 0x02;
-                }
-                response[0] = 'F';
-                sprintf((char *) &response[1], "%02X", flags);
-                response[3] = SLCAN_OK;
-                response_length = 4;
-                break;
-            case SLCAN_CMD_ISR:
-                response[0] = 'I';
-                sprintf((char *) &response[1], "%02X", PCIFR);
-                response[3] = SLCAN_OK;
-                response_length = 4;
-                break;
-            case SLCAN_CMD_TIMESTAMP:
-                if (slcan_buffer_length < 3) {
-                    response[0] = SLCAN_ERROR;
-                    response_length = 1;
-                    error = 1;
-                    break;
-                }
-                switch(slcan_buffer[start+1]) {
-                    case '0':
-                        canmode &= ~SLCAN_MODE_TIMESTAMP_ENABLED;
-                        break;
-                    case '1':
-                    default:
-                        canmode |= SLCAN_MODE_TIMESTAMP_ENABLED;
-                        break;
-                }
-                response[0] = SLCAN_OK;
-                response_length = 1;
-                break;
-            // not implemented
-            case SLCAN_CMD_FILTER:
-            // not supported
-            case SLCAN_CMD_ACC_CODE:
-            case SLCAN_CMD_ACC_MASK:
-            case SLCAN_CMD_AUTO_POLL: // always enabled
-            case SLCAN_CMD_BITRATE_EXT:
-            case SLCAN_CMD_POLL_ALL:
-            case SLCAN_CMD_POLL:
-            default:
-                response[0] = SLCAN_ERROR;
-                response_length = 1;
-                error = 1;
-                break;
+            }
         }
-
-        if (error) {
-        }
-
 
         if (response_length > 0) {
 #ifdef ARDUINO_SERIAL

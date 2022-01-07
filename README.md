@@ -48,3 +48,21 @@ Same as above but then `make slcan_multimode` and install with `make install_kmo
 
 ## Known issues
 - There is some memoy issue which causes the device to reset on receiving data and timing out afterwards.
+
+
+# Additions to the original SLCAN/LAWICEL spec
+- Added "B" Command which can prepend any command to a can bus which selects a bus, e.g. `B1t1012FF00\r` would send some stuff to bus 1 (0 is the default)
+- Added "D" Command which allows the data to be send in binary format. Enable with `D1\r` disable with `D0\r`
+- Sould be fully backwards compatible, timestamps are not supported.
+
+Binary format:
+- 8 bits header (0xA5)
+- 2 bits bus (0b11000000)
+- 1 bit rtr (0b00100000)
+- 29 bits id
+- 64 bits data
+- 8 bits CRC8
+
+This is a bit over half (15 vs 27) for a non timestamped frame at max size and is way easier on the microcontroller. It also has added error detection, while not great it's good enough to detect single bitflips which sometimes happen on high baudrates.
+
+I might switch to the AUTOSAR polynomial as it would guarantee 4 bits of hamming distance which CRC8 limits to 2 for this size.
