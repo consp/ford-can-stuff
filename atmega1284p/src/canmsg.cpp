@@ -1,3 +1,4 @@
+#include "usart.h"  // for global registers
 #include "canmsg.h"
 
 apim_1 APIM_SIGNAL_1;

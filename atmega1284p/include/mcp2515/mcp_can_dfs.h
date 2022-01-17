@@ -31,7 +31,7 @@
 #include <inttypes.h>
 
 // if print debug information
-#define DEBUG_MODE 1
+//#define DEBUG_MODE 1
 
 /*
  *   Begin mt
