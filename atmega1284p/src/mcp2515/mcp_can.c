@@ -2,10 +2,14 @@
   mcp_can.cpp
   2012 Copyright (c) Seeed Technology Inc.  All right reserved.
   2017 Copyright (c) Cory J. Fowler  All Rights Reserved.
+  2021 Copyright (c) Tristan Timmermans All Rights Reserved.
 
   Author: Loovee
   Contributor: Cory J. Fowler
   2017-09-25
+  Contributor: Tristan Timmermans
+  2021-01-20
+
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
   License as published by the Free Software Foundation; either
