@@ -12,7 +12,7 @@
 #define CAN1_INT 16
 #define CAN2_INT 15
 
-#define CAN_BUFFER_SIZE 16 
+#define CAN_BUFFER_SIZE 64 
 
 /*
  * using binary mode switches cost of sending to serial from about 180us to 95us
@@ -23,4 +23,11 @@
 //#define DEBUG_CAN
 //#define WAKEUP_APIM
 //#define DEBUG
+//
+/*
+ * If defined as 0 check every cycle for incoming data
+ * otherwise should be power of two (1/2/4/8/16/32/64/128)
+ */
+#define GLOBAL_COUNTER
+#define SLCAN_CHECK_INTERVAL 128
 #endif // __SETTINGS_H__

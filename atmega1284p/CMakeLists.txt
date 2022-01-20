@@ -5,8 +5,8 @@ set (PROGRAMMER usbasp)
 set (MCU atmega1284p)
 set (E_FUSE 0xFF)
 set (H_FUSE 0xD9)
-set (L_FUSE 0xFC)
-set (MCU_SPEED 16000000)
+set (L_FUSE 0xF7)
+set (MCU_SPEED 24000000)
 
 
 if (MCU MATCHES atmega1284p)
@@ -16,25 +16,56 @@ endif (MCU MATCHES atmega1284p)
 set (MCU_C_FLAGS "-D${MCU_DEFINE} -mmcu=${MCU}")
 set (MCU_LINK_FLAGS "-mmcu=${MCU} -Wl,--gc-sections -mrelax -Wl,-Map,fiesta_can.map")
 
-add_definitions ("-DF_CPU=${MCU_SPEED}L")
-add_definitions ("-D${MCU_DEFINE}")
-add_definitions ("-fpack-struct")
-add_definitions ("-fshort-enums")
-add_definitions ("-Wall")
-add_definitions ("-Werror")
-add_definitions ("-funsigned-char")
-add_definitions ("-funsigned-bitfields")
-add_definitions ("-ffunction-sections")
-add_definitions ("-c")
-add_definitions ("-O3")
-add_definitions ("-g")
-add_definitions ("-DSERIAL_TX_BUFFER_SIZE=256")
-add_definitions ("-DSERIAL_RX_BUFFER_SIZE=256")
-add_definitions ("-ffunction-sections -fdata-sections -MMD")
-add_definitions ("-DUSB_VID=null -DUSB_PID=null -DARDUINO=106")
+add_link_options (-mmcu=${MCU})
+add_link_options(-Wl,--gc-sections -mrelax -Wl,-Map,fiesta_can.map)
+add_link_options(-flto)
+add_compile_options (-mmcu=${MCU})
+add_compile_options (-fpack-struct)
+add_compile_options (-fshort-enums)
+add_compile_options (-Wall)
+# add_compile_options (-Werror)
+add_compile_options (-funsigned-char)
+add_compile_options (-funsigned-bitfields)
+add_compile_options (-ffunction-sections)
+add_compile_options (-c)
+add_compile_options (-O3)
+add_compile_options (-g)
+add_compile_options (--save-temps)
+add_compile_options (-ffunction-sections)
+add_compile_options (-fdata-sections)
+add_compile_options (-MMD)
+add_compile_options (-DUSB_VID=null -DUSB_PID=null -DARDUINO=106)
+# add_compile_options (-S)
+#add_compile_options (-flto) # disable if attempting to use usart global regs
+add_compile_options (-ffixed-r2 -ffixed-r3 -ffixed-r4 -ffixed-r5 -ffixed-r6)
+add_definitions (-DF_CPU=${MCU_SPEED}L)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-include_directories (include/ cores/ libraries/SPI/src/ libraries/Wire/src/ libraries/EEPROM/src/ board/ libraries/uart/include)
+include_directories (include/ cores/ libraries/SPI/src/ libraries/Wire/src/ libraries/EEPROM/src/ board/)
+
+set (AVRDUDE_CONFIG ${CMAKE_CURRENT_SOURCE_DIR}/board/avrdude.conf)
+
+if (EXISTS ARDUINO_CORE)
+set (SOURCE
+		src/fiesta_can.cpp
+		src/canmsg.cpp
+        src/crc8.cpp
+	)
+else()
+set (SOURCE
+		src/fiesta_can.c
+        src/crc8.c
+    )
+endif()
+
+set (MCP2515_CAN_SOURCE
+		src/mcp2515/mcp_can.c
+	)
+
+    #add_library(mcp2515can STATIC ${MCP2515_CAN_SOURCE})
+add_executable (fiesta_can.elf ${SOURCE} ${CRC8_SOURCE} ${MCP2515_CAN_SOURCE})
+
+
 
 find_program (AVR_CC avr-gcc REQUIRED)
 find_program (AVR_CXX avr-g++ REQUIRED)
@@ -46,69 +77,40 @@ find_program (AVRDUDE avrdude REQUIRED)
 set (CMAKE_SYSTEM_NAME Generic)
 set (CMAKE_SYSTEM_PROCESSOR avr)
 set (CMAKE_C_COMPILER ${AVR_CC})
-set (CMAKE_CXX_COMPILER ${AVR_CXX})
 
-set (AVRDUDE_CONFIG ${CMAKE_CURRENT_SOURCE_DIR}/board/avrdude.conf)
-
-set (SOURCE
-		src/fiesta_can.cpp
-		src/canmsg.cpp
-	)
-
-set (CRC8_SOURCE 
-        src/crc8.cpp
-    )
-
-set (MCP2515_CAN_SOURCE
-		src/mcp2515/mcp_can.cpp
-	)
-
-set (UART_SOURCE
-        libraries/uart/usart.c
+if (EXISTS ARDUINO_CORE)
+    set (ARDUINO_CORE_SOURCE
+            WInterrupts.c
+            wiring.c
+            wiring_analog.c
+            wiring_digital.c
+            wiring_pulse.c
+            wiring_shift.c
+            Stream.cpp
+            hooks.c
+            new.cpp
+            Print.cpp
+            main.cpp
         )
-
-set (ARDUINO_CORE_SOURCE
-		WInterrupts.c
-		wiring.c
-		wiring_analog.c
-		wiring_digital.c
-		wiring_pulse.c
-		wiring_shift.c
-		Stream.cpp
-		hooks.c
-		new.cpp
-		Print.cpp
-		main.cpp
-	)
+    set (ARDUINO_CORE_SOURCE_DIR "cores/")
+    list (TRANSFORM ARDUINO_CORE_SOURCE PREPEND ${ARDUINO_CORE_SOURCE_DIR})
+    set (MIGHTY_CORE_SOURCE
+        SPI/src/SPI.cpp
+        )
+    set (MIGHTY_CORE_SOURCE_DIR "libraries/")
+    list (TRANSFORM MIGHTY_CORE_SOURCE PREPEND ${MIGHTY_CORE_SOURCE_DIR})
+    add_definitions (-DARDUINO_CORE)
+    add_library(arduino STATIC ${ARDUINO_CORE_SOURCE})
+    add_library(mightycore STATIC ${MIGHTY_CORE_SOURCE})
+    target_link_libraries (fiesta_can.elf arduino mightycore)
+    target_link_libraries (mcp2515can arduino mightycore)
+    set (CMAKE_CXX_COMPILER ${AVR_CXX})
+else()
+    set (CMAKE_CXX_COMPILER ${AVR_CC})
+endif()
 # HardwareSerial.cpp
 #		HardwareSerial0.cpp
 #		HardwareSerial1.cpp
-
-set (ARDUINO_CORE_SOURCE_DIR "cores/")
-list (TRANSFORM ARDUINO_CORE_SOURCE PREPEND ${ARDUINO_CORE_SOURCE_DIR})
-
-set (MIGHTY_CORE_SOURCE
-	SPI/src/SPI.cpp
-	)
-set (MIGHTY_CORE_SOURCE_DIR "libraries/")
-list (TRANSFORM MIGHTY_CORE_SOURCE PREPEND ${MIGHTY_CORE_SOURCE_DIR})
-
-add_library(mcp2515can STATIC ${MCP2515_CAN_SOURCE})
-add_library(arduino STATIC ${ARDUINO_CORE_SOURCE})
-add_library(mightycore STATIC ${MIGHTY_CORE_SOURCE})
-add_library(crc8 STATIC ${CRC8_SOURCE})
-add_library(uart STATIC ${UART_SOURCE})
-
-add_executable (fiesta_can.elf ${SOURCE})
-
-set_target_properties (arduino PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
-set_target_properties (mightycore PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
-set_target_properties (mcp2515can PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
-set_target_properties (crc8 PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
-set_target_properties (uart PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
-set_target_properties (fiesta_can.elf PROPERTIES COMPILE_FLAGS "${MCU_C_FLAGS}" LINK_FLAGS "${MCU_LINK_FLAGS}")
-target_link_libraries (mcp2515can)
-target_link_libraries (fiesta_can.elf mcp2515can crc8 uart)
 
 add_custom_command (
 		OUTPUT rom.eep
